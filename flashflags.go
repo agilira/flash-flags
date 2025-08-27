@@ -904,6 +904,24 @@ func (fs *FlagSet) findConfigFile() string {
 	return ""
 }
 
+// isSafeAbsolutePath checks if an absolute path is safe for config files
+func isSafeAbsolutePath(path string) bool {
+	safePrefixes := []string{
+		"/tmp/",         // Linux/Unix temp
+		"/opt/",         // Optional software
+		"/etc/",         // System configuration
+		"/var/folders/", // macOS temp
+		"/var/tmp/",     // System temp
+	}
+
+	for _, prefix := range safePrefixes {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // loadConfigFromFile loads and applies configuration from a JSON file
 func (fs *FlagSet) loadConfigFromFile(path string) error {
 	// Validate path to prevent directory traversal attacks
@@ -911,11 +929,8 @@ func (fs *FlagSet) loadConfigFromFile(path string) error {
 		return fmt.Errorf("invalid config file path: %s", path)
 	}
 
-	// Allow relative paths, /tmp/ (for tests), /opt/, /etc/
-	if strings.HasPrefix(path, "/") &&
-		!strings.HasPrefix(path, "/tmp/") &&
-		!strings.HasPrefix(path, "/opt/") &&
-		!strings.HasPrefix(path, "/etc/") {
+	// Allow relative paths and safe absolute paths
+	if strings.HasPrefix(path, "/") && !isSafeAbsolutePath(path) {
 		return fmt.Errorf("invalid config file path: %s", path)
 	}
 
