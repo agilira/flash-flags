@@ -122,7 +122,7 @@ FlashFlags is designed for maximum performance, offering practically identical p
 | `duration` | `time.Duration` | `--timeout 30s` | Time durations |
 | `stringSlice` | `[]string` | `--tags web,api` | Comma-separated lists |
 
-## 🔧 Configuration Priority
+## Configuration Priority
 
 FlashFlags applies configuration in this priority order (higher numbers override lower):
 
@@ -155,7 +155,7 @@ export MYAPP_PORT=8080
 export DATABASE_URL=postgres://...
 ```
 
-## ✅ Validation & Constraints
+## Validation & Constraints
 
 ```go
 // Custom validation
@@ -174,7 +174,7 @@ fs.SetRequired("api-key")
 fs.SetDependencies("tls-cert", "enable-tls")
 ```
 
-## 🔍 Real-World Example
+## Real-World Example
 
 ```go
 package main
