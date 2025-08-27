@@ -23,7 +23,9 @@ Initial release v1.0.0 of FlashFlags command-line flag parsing library. Extracte
 - N/A (Initial release)
 
 ## #Corrected  
-- N/A (Initial release)
+- Fixed macOS compatibility for configuration file tests (paths in /var/folders/)
+- Improved cross-platform path validation for temporary directories
+- Enhanced config file security validation with isSafeAbsolutePath helper
 
 ## #Features
 - `NewFlagSet(name)` - Create flag set with custom application name
