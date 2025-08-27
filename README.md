@@ -1,12 +1,12 @@
 # FlashFlags: Ultra-fast command-line flag parsing for Go
 ### an AGILira library
 
-[![CI/CD Pipeline](https://github.com/agilira/flash-flags/actions/workflows/ci.yml/badge.svg)](https://github.com/agilira/flash-flags/actions/workflows/ci.yml)
+[![CI](https://github.com/agilira/flash-flags/workflows/Quality%20Checks/badge.svg)](https://github.com/agilira/flash-flags/actions)
+[![Security](https://img.shields.io/badge/security-gosec%20verified-brightgreen.svg)](https://github.com/securecodewarrior/gosec)
 [![Go Report Card](https://goreportcard.com/badge/github.com/agilira/flash-flags)](https://goreportcard.com/report/github.com/agilira/flash-flags)
 [![Coverage](https://img.shields.io/badge/coverage-92.7%25-brightgreen.svg)](.)
-[![Test Coverage](https://img.shields.io/badge/coverage-92%25-brightgreen.svg)](.)
 
-FlashFlags is an ultra-fast, zero-dependency, lock-free command-line flag parsing library for Go. Originally built for [Argus](https://github.com/agilira/argus), it provides great performance while maintaining simplicity and ease of use.
+FlashFlags is an ultra-fast, zero-dependency, lock-free command-line flag parsing library for Go. Originally built for Argus, it provides great performance while maintaining simplicity and ease of use.
 
 ## Features
 
@@ -272,14 +272,6 @@ func main() {
     // Start your server here...
 }
 ```
-
-## Quality Metrics
-
-- **Test Coverage**: 92.7%
-- **Security Scan**: 0 issues (gosec)
-- **Static Analysis**: Clean (staticcheck)
-- **Code Quality**: A+ (goreportcard)
-- **Race Detector**: Clean
 
 ## License
 
