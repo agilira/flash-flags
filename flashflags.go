@@ -384,13 +384,12 @@ func (fs *FlagSet) parseLongFlag(args []string, i int) (int, error) {
 				return 0, err
 			}
 			return 1, nil // Consumed one extra argument
+		}
+		// Boolean flag or error
+		if flag, exists := fs.flags[flagName]; exists && flag.flagType == "bool" {
+			flagValue = "true"
 		} else {
-			// Boolean flag or error
-			if flag, exists := fs.flags[flagName]; exists && flag.flagType == "bool" {
-				flagValue = "true"
-			} else {
-				return 0, fmt.Errorf("flag --%s requires a value", flagName)
-			}
+			return 0, fmt.Errorf("flag --%s requires a value", flagName)
 		}
 	}
 
@@ -470,7 +469,7 @@ func (fs *FlagSet) setStringSliceValue(flag *Flag, value string) error {
 		}
 		return nil
 	}
-	
+
 	// Manual parsing to avoid strings.Count allocation
 	commas := 0
 	for _, c := range []byte(value) {
