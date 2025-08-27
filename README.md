@@ -6,7 +6,7 @@
 [![Coverage](https://img.shields.io/badge/coverage-92.7%25-brightgreen.svg)](.)
 [![Test Coverage](https://img.shields.io/badge/coverage-92%25-brightgreen.svg)](.)
 
-**FlashFlags** is an ultra-fast, zero-dependency, lock-free command-line flag parsing library for Go. Extracted from the [Argus](https://github.com/agilira/argus) project, it provides great performance while maintaining simplicity and ease of use.
+FlashFlags is an ultra-fast, zero-dependency, lock-free command-line flag parsing library for Go. Originally built for [Argus](https://github.com/agilira/argus), it provides great performance while maintaining simplicity and ease of use.
 
 ## Features
 
