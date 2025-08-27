@@ -41,7 +41,10 @@ staticcheck: ## Run staticcheck
 gosec: ## Run security scan (core library only)
 	~/go/bin/gosec --exclude-dir=demo ./...
 
-quality: fmt lint staticcheck gosec ## Run all quality checks
+gocyclo: ## Check cyclomatic complexity
+	~/go/bin/gocyclo -over 15 . | grep -v "_test.go" || true
+
+quality: fmt lint staticcheck gosec gocyclo ## Run all quality checks
 
 ci: test race quality coverage ## Run all CI checks
 
@@ -52,3 +55,4 @@ install-tools: ## Install development tools
 	go install honnef.co/go/tools/cmd/staticcheck@latest
 	go install golang.org/x/lint/golint@latest
 	go install github.com/securego/gosec/v2/cmd/gosec@latest
+	go install github.com/fzipp/gocyclo/cmd/gocyclo@latest

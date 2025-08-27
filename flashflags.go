@@ -286,6 +286,17 @@ func (fs *FlagSet) Parse(args []string) error {
 		return fmt.Errorf("environment variable error: %v", err)
 	}
 
+	// Parse command line arguments (highest priority)
+	if err := fs.parseArguments(args); err != nil {
+		return err
+	}
+
+	// Validate all constraints after parsing
+	return fs.ValidateAllConstraints()
+}
+
+// parseArguments handles the main argument parsing loop
+func (fs *FlagSet) parseArguments(args []string) error {
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 
@@ -301,174 +312,223 @@ func (fs *FlagSet) Parse(args []string) error {
 
 		// Handle short flags (-p, -d)
 		if len(arg) == 2 && arg[0] == '-' && arg[1] != '-' {
-			shortKey := string(arg[1])
-			flag, exists := fs.shortMap[shortKey]
-			if !exists {
-				return fmt.Errorf("unknown flag: -%s", shortKey)
-			}
-
-			if flag.flagType == "bool" {
-				flag.value = true
-				if flag.ptr != nil {
-					*flag.ptr.(*bool) = true
-				}
-				flag.changed = true
-				continue
-			}
-
-			// Non-bool short flag needs value
-			if i+1 >= len(args) {
-				return fmt.Errorf("flag -%s requires a value", shortKey)
-			}
-			flagValue := args[i+1]
-			i++ // Skip next argument
-
-			err := fs.setFlagValue(flag.name, flagValue)
+			consumed, err := fs.parseShortFlag(args, i)
 			if err != nil {
 				return err
 			}
+			i += consumed
 			continue
 		}
 
 		// Handle long flags (--name)
-		if !strings.HasPrefix(arg, "--") {
+		if strings.HasPrefix(arg, "--") {
+			consumed, err := fs.parseLongFlag(args, i)
+			if err != nil {
+				return err
+			}
+			i += consumed
 			continue
 		}
+	}
+	return nil
+}
 
-		// Remove -- prefix without allocation
-		arg = arg[2:]
+// parseShortFlag handles short flag parsing (-p, -d)
+func (fs *FlagSet) parseShortFlag(args []string, i int) (int, error) {
+	arg := args[i]
+	shortKey := string(arg[1])
+	flag, exists := fs.shortMap[shortKey]
+	if !exists {
+		return 0, fmt.Errorf("unknown flag: -%s", shortKey)
+	}
 
-		var flagName, flagValue string
-		// Optimized parsing to avoid SplitN allocation
-		if eqPos := strings.IndexByte(arg, '='); eqPos != -1 {
-			flagName = arg[:eqPos]
-			flagValue = arg[eqPos+1:]
-		} else {
-			flagName = arg
-			// Look for value in next argument
-			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
-				flagValue = args[i+1]
-				i++ // Skip next argument
-			} else {
-				// Boolean flag or error
-				if flag, exists := fs.flags[flagName]; exists && flag.flagType == "bool" {
-					flagValue = "true"
-				} else {
-					return fmt.Errorf("flag --%s requires a value", flagName)
-				}
-			}
+	if flag.flagType == "bool" {
+		flag.value = true
+		if flag.ptr != nil {
+			*flag.ptr.(*bool) = true
 		}
+		flag.changed = true
+		return 0, nil
+	}
 
-		// Set flag value
-		err := fs.setFlagValue(flagName, flagValue)
-		if err != nil {
-			return err
+	// Non-bool short flag needs value
+	if i+1 >= len(args) {
+		return 0, fmt.Errorf("flag -%s requires a value", shortKey)
+	}
+	flagValue := args[i+1]
+
+	err := fs.setFlagValue(flag.name, flagValue)
+	if err != nil {
+		return 0, err
+	}
+	return 1, nil // Consumed one extra argument
+}
+
+// parseLongFlag handles long flag parsing (--name)
+func (fs *FlagSet) parseLongFlag(args []string, i int) (int, error) {
+	arg := args[i][2:] // Remove -- prefix
+
+	var flagName, flagValue string
+	// Optimized parsing to avoid SplitN allocation
+	if eqPos := strings.IndexByte(arg, '='); eqPos != -1 {
+		flagName = arg[:eqPos]
+		flagValue = arg[eqPos+1:]
+	} else {
+		flagName = arg
+		// Look for value in next argument
+		if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+			flagValue = args[i+1]
+			// Set flag value
+			err := fs.setFlagValue(flagName, flagValue)
+			if err != nil {
+				return 0, err
+			}
+			return 1, nil // Consumed one extra argument
+		} else {
+			// Boolean flag or error
+			if flag, exists := fs.flags[flagName]; exists && flag.flagType == "bool" {
+				flagValue = "true"
+			} else {
+				return 0, fmt.Errorf("flag --%s requires a value", flagName)
+			}
 		}
 	}
 
-	// Validate all constraints after parsing
-	return fs.ValidateAllConstraints()
+	// Set flag value
+	err := fs.setFlagValue(flagName, flagValue)
+	if err != nil {
+		return 0, err
+	}
+	return 0, nil
 }
 
-// setFlagValue sets a flag value with type conversion and minimal allocations
+// Type-specific value setters to reduce complexity
+
+func (fs *FlagSet) setStringValue(flag *Flag, value string) error {
+	flag.value = value
+	if flag.ptr != nil {
+		*flag.ptr.(*string) = value
+	}
+	return nil
+}
+
+func (fs *FlagSet) setIntValue(flag *Flag, value, name string) error {
+	intVal, err := strconv.Atoi(value)
+	if err != nil {
+		return fmt.Errorf("invalid int value for flag --%s: %s", name, value)
+	}
+	flag.value = intVal
+	if flag.ptr != nil {
+		*flag.ptr.(*int) = intVal
+	}
+	return nil
+}
+
+func (fs *FlagSet) setBoolValue(flag *Flag, value, name string) error {
+	boolVal, err := strconv.ParseBool(value)
+	if err != nil {
+		return fmt.Errorf("invalid bool value for flag --%s: %s", name, value)
+	}
+	flag.value = boolVal
+	if flag.ptr != nil {
+		*flag.ptr.(*bool) = boolVal
+	}
+	return nil
+}
+
+func (fs *FlagSet) setDurationValue(flag *Flag, value, name string) error {
+	durVal, err := time.ParseDuration(value)
+	if err != nil {
+		return fmt.Errorf("invalid duration value for flag --%s: %s", name, value)
+	}
+	flag.value = durVal
+	if flag.ptr != nil {
+		*flag.ptr.(*time.Duration) = durVal
+	}
+	return nil
+}
+
+func (fs *FlagSet) setFloat64Value(flag *Flag, value, name string) error {
+	floatVal, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return fmt.Errorf("invalid float64 value for flag --%s: %s", name, value)
+	}
+	flag.value = floatVal
+	if flag.ptr != nil {
+		*flag.ptr.(*float64) = floatVal
+	}
+	return nil
+}
+
+func (fs *FlagSet) setStringSliceValue(flag *Flag, value string) error {
+	// Optimized string slice parsing with minimal allocations
+	if value == "" {
+		slice := []string{}
+		flag.value = slice
+		if flag.ptr != nil {
+			*flag.ptr.(*[]string) = slice
+		}
+		return nil
+	}
+	
+	// Manual parsing to avoid strings.Count allocation
+	commas := 0
+	for _, c := range []byte(value) {
+		if c == ',' {
+			commas++
+		}
+	}
+	slice := make([]string, 0, commas+1)
+
+	start := 0
+	for i := 0; i < len(value); i++ {
+		if value[i] == ',' {
+			if i > start {
+				slice = append(slice, value[start:i])
+			}
+			start = i + 1
+		}
+	}
+	if start < len(value) {
+		slice = append(slice, value[start:])
+	}
+	flag.value = slice
+	if flag.ptr != nil {
+		*flag.ptr.(*[]string) = slice
+	}
+	return nil
+}
+
 func (fs *FlagSet) setFlagValue(name, value string) error {
 	flag, exists := fs.flags[name]
 	if !exists {
 		return fmt.Errorf("unknown flag: --%s", name)
 	}
 
+	// Set value based on type using dedicated functions
+	var err error
 	switch flag.flagType {
 	case "string":
-		flag.value = value
-		if flag.ptr != nil {
-			*flag.ptr.(*string) = value
-		}
-		flag.changed = true
-
+		err = fs.setStringValue(flag, value)
 	case "int":
-		intVal, err := strconv.Atoi(value)
-		if err != nil {
-			return fmt.Errorf("invalid int value for flag --%s: %s", name, value)
-		}
-		flag.value = intVal
-		if flag.ptr != nil {
-			*flag.ptr.(*int) = intVal
-		}
-		flag.changed = true
-
+		err = fs.setIntValue(flag, value, name)
 	case "bool":
-		boolVal, err := strconv.ParseBool(value)
-		if err != nil {
-			return fmt.Errorf("invalid bool value for flag --%s: %s", name, value)
-		}
-		flag.value = boolVal
-		if flag.ptr != nil {
-			*flag.ptr.(*bool) = boolVal
-		}
-		flag.changed = true
-
+		err = fs.setBoolValue(flag, value, name)
 	case "duration":
-		durVal, err := time.ParseDuration(value)
-		if err != nil {
-			return fmt.Errorf("invalid duration value for flag --%s: %s", name, value)
-		}
-		flag.value = durVal
-		if flag.ptr != nil {
-			*flag.ptr.(*time.Duration) = durVal
-		}
-		flag.changed = true
-
+		err = fs.setDurationValue(flag, value, name)
 	case "float64":
-		floatVal, err := strconv.ParseFloat(value, 64)
-		if err != nil {
-			return fmt.Errorf("invalid float64 value for flag --%s: %s", name, value)
-		}
-		flag.value = floatVal
-		if flag.ptr != nil {
-			*flag.ptr.(*float64) = floatVal
-		}
-		flag.changed = true
-
+		err = fs.setFloat64Value(flag, value, name)
 	case "stringSlice":
-		// Optimized string slice parsing with minimal allocations
-		if value == "" {
-			slice := []string{}
-			flag.value = slice
-			if flag.ptr != nil {
-				*flag.ptr.(*[]string) = slice
-			}
-		} else {
-			// Manual parsing to avoid strings.Count allocation
-			commas := 0
-			for _, c := range []byte(value) {
-				if c == ',' {
-					commas++
-				}
-			}
-			slice := make([]string, 0, commas+1)
-
-			start := 0
-			for i := 0; i < len(value); i++ {
-				if value[i] == ',' {
-					if i > start {
-						slice = append(slice, value[start:i])
-					}
-					start = i + 1
-				}
-			}
-			if start < len(value) {
-				slice = append(slice, value[start:])
-			}
-			flag.value = slice
-			if flag.ptr != nil {
-				*flag.ptr.(*[]string) = slice
-			}
-		}
-		flag.changed = true
-
+		err = fs.setStringSliceValue(flag, value)
 	default:
 		return fmt.Errorf("unsupported flag type: %s", flag.flagType)
 	}
+
+	if err != nil {
+		return err
+	}
+
+	flag.changed = true
 
 	// Run validation if validator is set
 	if flag.validator != nil {
@@ -969,84 +1029,108 @@ func (fs *FlagSet) applyConfig(config map[string]interface{}) error {
 	return nil
 }
 
-// setFlagValueFromConfig sets a flag value from config data with type conversion
+// Config-specific value setters to reduce complexity
+
+func (fs *FlagSet) setStringValueFromConfig(flag *Flag, value interface{}, name string) error {
+	if str, ok := value.(string); ok {
+		flag.value = str
+		if flag.ptr != nil {
+			*flag.ptr.(*string) = str
+		}
+		return nil
+	}
+	return fmt.Errorf("expected string for flag %s, got %T", name, value)
+}
+
+func (fs *FlagSet) setIntValueFromConfig(flag *Flag, value interface{}, name string) error {
+	var intVal int
+	switch v := value.(type) {
+	case float64: // JSON numbers are float64
+		intVal = int(v)
+	case int:
+		intVal = v
+	default:
+		return fmt.Errorf("expected number for flag %s, got %T", name, value)
+	}
+	flag.value = intVal
+	if flag.ptr != nil {
+		*flag.ptr.(*int) = intVal
+	}
+	return nil
+}
+
+func (fs *FlagSet) setBoolValueFromConfig(flag *Flag, value interface{}, name string) error {
+	if boolVal, ok := value.(bool); ok {
+		flag.value = boolVal
+		if flag.ptr != nil {
+			*flag.ptr.(*bool) = boolVal
+		}
+		return nil
+	}
+	return fmt.Errorf("expected boolean for flag %s, got %T", name, value)
+}
+
+func (fs *FlagSet) setFloat64ValueFromConfig(flag *Flag, value interface{}, name string) error {
+	var floatVal float64
+	switch v := value.(type) {
+	case float64:
+		floatVal = v
+	case int:
+		floatVal = float64(v)
+	default:
+		return fmt.Errorf("expected number for flag %s, got %T", name, value)
+	}
+	flag.value = floatVal
+	if flag.ptr != nil {
+		*flag.ptr.(*float64) = floatVal
+	}
+	return nil
+}
+
+func (fs *FlagSet) setStringSliceValueFromConfig(flag *Flag, value interface{}, name string) error {
+	if slice, ok := value.([]interface{}); ok {
+		strSlice := make([]string, len(slice))
+		for i, item := range slice {
+			if str, ok := item.(string); ok {
+				strSlice[i] = str
+			} else {
+				return fmt.Errorf("expected string array for flag %s, got %T in array", name, item)
+			}
+		}
+		flag.value = strSlice
+		if flag.ptr != nil {
+			*flag.ptr.(*[]string) = strSlice
+		}
+		return nil
+	}
+	return fmt.Errorf("expected array for flag %s, got %T", name, value)
+}
+
 func (fs *FlagSet) setFlagValueFromConfig(name string, value interface{}) error {
 	flag, exists := fs.flags[name]
 	if !exists {
 		return fmt.Errorf("unknown flag: %s", name)
 	}
 
+	// Set value based on type using dedicated functions
+	var err error
 	switch flag.flagType {
 	case "string":
-		if str, ok := value.(string); ok {
-			flag.value = str
-			if flag.ptr != nil {
-				*flag.ptr.(*string) = str
-			}
-		} else {
-			return fmt.Errorf("expected string for flag %s, got %T", name, value)
-		}
-
+		err = fs.setStringValueFromConfig(flag, value, name)
 	case "int":
-		var intVal int
-		switch v := value.(type) {
-		case float64: // JSON numbers are float64
-			intVal = int(v)
-		case int:
-			intVal = v
-		default:
-			return fmt.Errorf("expected number for flag %s, got %T", name, value)
-		}
-		flag.value = intVal
-		if flag.ptr != nil {
-			*flag.ptr.(*int) = intVal
-		}
-
+		err = fs.setIntValueFromConfig(flag, value, name)
 	case "bool":
-		if boolVal, ok := value.(bool); ok {
-			flag.value = boolVal
-			if flag.ptr != nil {
-				*flag.ptr.(*bool) = boolVal
-			}
-		} else {
-			return fmt.Errorf("expected boolean for flag %s, got %T", name, value)
-		}
-
+		err = fs.setBoolValueFromConfig(flag, value, name)
 	case "float64":
-		var floatVal float64
-		switch v := value.(type) {
-		case float64:
-			floatVal = v
-		case int:
-			floatVal = float64(v)
-		default:
-			return fmt.Errorf("expected number for flag %s, got %T", name, value)
-		}
-		flag.value = floatVal
-		if flag.ptr != nil {
-			*flag.ptr.(*float64) = floatVal
-		}
-
+		err = fs.setFloat64ValueFromConfig(flag, value, name)
 	case "stringSlice":
-		if slice, ok := value.([]interface{}); ok {
-			strSlice := make([]string, len(slice))
-			for i, item := range slice {
-				if str, ok := item.(string); ok {
-					strSlice[i] = str
-				} else {
-					return fmt.Errorf("expected string array for flag %s, got %T in array", name, item)
-				}
-			}
-			flag.value = strSlice
-			if flag.ptr != nil {
-				*flag.ptr.(*[]string) = strSlice
-			}
-		} else {
-			return fmt.Errorf("expected array for flag %s, got %T", name, value)
-		}
-
+		err = fs.setStringSliceValueFromConfig(flag, value, name)
 	default:
 		return fmt.Errorf("unsupported flag type: %s", flag.flagType)
+	}
+
+	if err != nil {
+		return err
 	}
 
 	// Validate the value if validator is set
