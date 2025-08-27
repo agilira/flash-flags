@@ -1,8 +1,8 @@
 # FlashFlags: Ultra-fast command-line flag parsing for Go
 ### an AGILira library
 
-[![CI](https://github.com/agilira/flash-flags/workflows/Quality%20Checks/badge.svg)](https://github.com/agilira/flash-flags/actions)
-[![Security](https://img.shields.io/badge/security-gosec%20verified-brightgreen.svg)](https://github.com/securecodewarrior/gosec)
+[![CI/CD Pipeline](https://github.com/agilira/flash-flags/actions/workflows/ci.yml/badge.svg)](https://github.com/agilira/flash-flags/actions/workflows/ci.yml)
+[![Security](https://img.shields.io/badge/security-gosec%20verified-brightgreen.svg)](https://github.com/securego/gosec)
 [![Go Report Card](https://goreportcard.com/badge/github.com/agilira/flash-flags)](https://goreportcard.com/report/github.com/agilira/flash-flags)
 [![Coverage](https://img.shields.io/badge/coverage-92.7%25-brightgreen.svg)](.)
 
