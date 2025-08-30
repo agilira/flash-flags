@@ -195,6 +195,16 @@ Prints help text to stdout.
 
 Prints basic usage information.
 
+### Configuration Loading
+
+#### `LoadConfig() error`
+
+Loads configuration from file and applies it. This is called automatically during Parse, but can be called manually if needed.
+
+#### `LoadEnvironmentVariables() error`
+
+Loads values from environment variables. This is called automatically during Parse, but can be called manually if needed.
+
 ## Flag Types
 
 ### Supported Types
@@ -338,6 +348,45 @@ Sets a custom environment variable name for a specific flag.
 - With prefix: `MYAPP_DB_HOST` for flag `db-host` with prefix `MYAPP`
 - Custom: Use `SetEnvVar()` for custom names
 
+## Configuration Integration
+
+### Interfaces
+
+#### `ConfigFlag` Interface
+
+Represents a flag interface for configuration management integration. This interface allows flash-flags to integrate seamlessly with configuration management systems like Argus, Viper, or custom solutions.
+
+```go
+type ConfigFlag interface {
+    Name() string
+    Value() interface{}
+    Type() string
+    Changed() bool
+    Usage() string
+}
+```
+
+#### `ConfigFlagSet` Interface
+
+Represents a collection of flags for configuration integration. This interface provides the standard contract expected by configuration managers.
+
+```go
+type ConfigFlagSet interface {
+    VisitAll(func(ConfigFlag))
+    Lookup(name string) ConfigFlag
+}
+```
+
+### Adapter
+
+#### `FlagSetAdapter`
+
+Wraps a FlagSet to implement ConfigFlagSet interface. This allows seamless integration with configuration management systems.
+
+#### `NewAdapter(fs *FlagSet) *FlagSetAdapter`
+
+Creates a new FlagSetAdapter for configuration integration. This allows a FlagSet to be used with configuration management systems that expect the ConfigFlagSet interface.
+
 ## Advanced Features
 
 ### Grouping
@@ -388,6 +437,10 @@ Returns whether the flag was explicitly set.
 #### `Usage() string`
 
 Returns the flag usage string.
+
+#### `SetValidator(validator func(interface{}) error)`
+
+Sets a validation function for the flag. The validator function will be called whenever the flag value is set.
 
 #### `Validate() error`
 

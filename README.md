@@ -2,9 +2,9 @@
 ### an AGILira library
 
 [![CI/CD Pipeline](https://github.com/agilira/flash-flags/actions/workflows/ci.yml/badge.svg)](https://github.com/agilira/flash-flags/actions/workflows/ci.yml)
-[![Security](https://img.shields.io/badge/security-gosec%20verified-brightgreen.svg)](https://github.com/securego/gosec)
+[![Security](https://img.shields.io/badge/security-gosec-brightgreen.svg)](https://github.com/securego/gosec)
 [![Go Report Card](https://goreportcard.com/badge/github.com/agilira/flash-flags)](https://goreportcard.com/report/github.com/agilira/flash-flags)
-[![Coverage](https://img.shields.io/badge/coverage-92.7%25-brightgreen.svg)](.)
+[![Coverage](https://codecov.io/gh/agilira/flash-flags/branch/main/graph/badge.svg)](https://codecov.io/gh/agilira/flash-flags)
 
 FlashFlags is an ultra-fast, zero-dependency, lock-free command-line flag parsing library for Go. Originally built for Argus, it provides great performance while maintaining simplicity and ease of use.
 

@@ -18,7 +18,8 @@ import (
 	"time"
 )
 
-// Flag implements ultra-fast flag using only standard library
+// Flag represents a single command-line flag with its value, metadata, and constraints.
+// It implements ultra-fast flag handling using only the standard library.
 type Flag struct {
 	name         string
 	value        interface{}
@@ -85,7 +86,8 @@ func (f *Flag) Reset() {
 	f.changed = false
 }
 
-// FlagSet implements ultra-fast flag set using only standard library
+// FlagSet represents a collection of command-line flags with parsing and validation capabilities.
+// It implements ultra-fast flag set handling using only the standard library.
 type FlagSet struct {
 	flags           map[string]*Flag // Long flag name -> Flag
 	shortMap        map[string]*Flag // Short flag key -> Flag
@@ -99,7 +101,9 @@ type FlagSet struct {
 	enableEnvLookup bool     // Whether to lookup environment variables
 }
 
-// New creates a new flag set with zero external dependencies
+// New creates a new FlagSet with the specified name.
+// The name is used for help output and configuration file discovery.
+// Returns a FlagSet with zero external dependencies.
 func New(name string) *FlagSet {
 	return &FlagSet{
 		flags:    make(map[string]*Flag),
@@ -108,7 +112,8 @@ func New(name string) *FlagSet {
 	}
 }
 
-// String adds a string flag
+// String defines a string flag with the specified name, default value, and usage string.
+// The return value is a pointer to a string variable that stores the value of the flag.
 func (fs *FlagSet) String(name, defaultValue, usage string) *string {
 	value := defaultValue
 	flag := &Flag{
@@ -125,7 +130,9 @@ func (fs *FlagSet) String(name, defaultValue, usage string) *string {
 	return &value
 }
 
-// StringVar adds a string flag with optional short key
+// StringVar defines a string flag with the specified name, short key, default value, and usage string.
+// The short key allows the flag to be specified with a single dash (e.g., -h for --host).
+// The return value is a pointer to a string variable that stores the value of the flag.
 func (fs *FlagSet) StringVar(name, shortKey string, defaultValue, usage string) *string {
 	value := defaultValue
 	flag := &Flag{
@@ -145,7 +152,8 @@ func (fs *FlagSet) StringVar(name, shortKey string, defaultValue, usage string) 
 	return &value
 }
 
-// Int adds an integer flag
+// Int defines an integer flag with the specified name, default value, and usage string.
+// The return value is a pointer to an int variable that stores the value of the flag.
 func (fs *FlagSet) Int(name string, defaultValue int, usage string) *int {
 	value := defaultValue
 	flag := &Flag{
@@ -162,7 +170,9 @@ func (fs *FlagSet) Int(name string, defaultValue int, usage string) *int {
 	return &value
 }
 
-// IntVar adds an integer flag with optional short key
+// IntVar defines an integer flag with the specified name, short key, default value, and usage string.
+// The short key allows the flag to be specified with a single dash (e.g., -p for --port).
+// The return value is a pointer to an int variable that stores the value of the flag.
 func (fs *FlagSet) IntVar(name, shortKey string, defaultValue int, usage string) *int {
 	value := defaultValue
 	flag := &Flag{
@@ -183,7 +193,9 @@ func (fs *FlagSet) IntVar(name, shortKey string, defaultValue int, usage string)
 	return &value
 }
 
-// Bool adds a boolean flag
+// Bool defines a boolean flag with the specified name, default value, and usage string.
+// Boolean flags can be set without a value (defaults to true) or with explicit true/false values.
+// The return value is a pointer to a bool variable that stores the value of the flag.
 func (fs *FlagSet) Bool(name string, defaultValue bool, usage string) *bool {
 	value := defaultValue
 	flag := &Flag{
@@ -201,7 +213,10 @@ func (fs *FlagSet) Bool(name string, defaultValue bool, usage string) *bool {
 	return &value
 }
 
-// BoolVar adds a boolean flag with optional short key
+// BoolVar defines a boolean flag with the specified name, short key, default value, and usage string.
+// The short key allows the flag to be specified with a single dash (e.g., -d for --debug).
+// Boolean flags can be set without a value (defaults to true) or with explicit true/false values.
+// The return value is a pointer to a bool variable that stores the value of the flag.
 func (fs *FlagSet) BoolVar(name, shortKey string, defaultValue bool, usage string) *bool {
 	value := defaultValue
 	flag := &Flag{
@@ -222,7 +237,9 @@ func (fs *FlagSet) BoolVar(name, shortKey string, defaultValue bool, usage strin
 	return &value
 }
 
-// Duration adds a duration flag
+// Duration defines a duration flag with the specified name, default value, and usage string.
+// Duration values are parsed using time.ParseDuration format (e.g., "5s", "1m30s", "2h").
+// The return value is a pointer to a time.Duration variable that stores the value of the flag.
 func (fs *FlagSet) Duration(name string, defaultValue time.Duration, usage string) *time.Duration {
 	value := defaultValue
 	flag := &Flag{
@@ -239,7 +256,8 @@ func (fs *FlagSet) Duration(name string, defaultValue time.Duration, usage strin
 	return &value
 }
 
-// Float64 adds a float64 flag
+// Float64 defines a float64 flag with the specified name, default value, and usage string.
+// The return value is a pointer to a float64 variable that stores the value of the flag.
 func (fs *FlagSet) Float64(name string, defaultValue float64, usage string) *float64 {
 	value := defaultValue
 	flag := &Flag{
@@ -256,7 +274,9 @@ func (fs *FlagSet) Float64(name string, defaultValue float64, usage string) *flo
 	return &value
 }
 
-// StringSlice adds a string slice flag
+// StringSlice defines a string slice flag with the specified name, default value, and usage string.
+// String slice values are parsed as comma-separated values (e.g., "a,b,c").
+// The return value is a pointer to a []string variable that stores the value of the flag.
 func (fs *FlagSet) StringSlice(name string, defaultValue []string, usage string) *[]string {
 	value := make([]string, len(defaultValue))
 	copy(value, defaultValue)
@@ -274,7 +294,9 @@ func (fs *FlagSet) StringSlice(name string, defaultValue []string, usage string)
 	return &value
 }
 
-// Parse parses command line arguments with optimized allocations
+// Parse parses command line arguments with optimized allocations.
+// It loads configuration files first (lowest priority), then environment variables (medium priority),
+// and finally command line arguments (highest priority). After parsing, it validates all constraints.
 func (fs *FlagSet) Parse(args []string) error {
 	// Load configuration file first (lowest priority)
 	if err := fs.LoadConfig(); err != nil {
@@ -539,14 +561,16 @@ func (fs *FlagSet) setFlagValue(name, value string) error {
 	return nil
 }
 
-// VisitAll calls fn for each flag in the set
+// VisitAll calls fn for each flag in the set.
+// This is useful for iterating over all flags, for example to generate help text or validate all flags.
 func (fs *FlagSet) VisitAll(fn func(*Flag)) {
 	for _, flag := range fs.flags {
 		fn(flag)
 	}
 }
 
-// Lookup finds a flag by name
+// Lookup finds a flag by name and returns a pointer to the Flag, or nil if not found.
+// This is useful for accessing flag metadata or checking if a flag exists.
 func (fs *FlagSet) Lookup(name string) *Flag {
 	flag, exists := fs.flags[name]
 	if !exists {
@@ -555,7 +579,8 @@ func (fs *FlagSet) Lookup(name string) *Flag {
 	return flag
 }
 
-// PrintUsage prints usage information for all flags
+// PrintUsage prints usage information for all flags to stdout.
+// This provides a simple way to display flag information without the full help text.
 func (fs *FlagSet) PrintUsage() {
 	fmt.Printf("Usage of %s:\n", fs.name)
 	for name, flag := range fs.flags {
@@ -568,7 +593,8 @@ func (fs *FlagSet) PrintUsage() {
 	}
 }
 
-// Changed returns whether the flag was set
+// Changed returns whether the specified flag was set during parsing.
+// This is useful for conditional logic based on whether a flag was explicitly provided.
 func (fs *FlagSet) Changed(name string) bool {
 	if flag := fs.Lookup(name); flag != nil {
 		return flag.changed
@@ -576,7 +602,8 @@ func (fs *FlagSet) Changed(name string) bool {
 	return false
 }
 
-// SetValidator sets a validation function for a specific flag
+// SetValidator sets a validation function for a specific flag.
+// The validator function will be called whenever the flag value is set, allowing for custom validation logic.
 func (fs *FlagSet) SetValidator(name string, validator func(interface{}) error) error {
 	flag := fs.Lookup(name)
 	if flag == nil {
@@ -586,7 +613,8 @@ func (fs *FlagSet) SetValidator(name string, validator func(interface{}) error) 
 	return nil
 }
 
-// SetRequired marks a flag as required
+// SetRequired marks a flag as required.
+// Required flags must be provided during parsing, otherwise an error will be returned.
 func (fs *FlagSet) SetRequired(name string) error {
 	flag := fs.Lookup(name)
 	if flag == nil {
@@ -596,7 +624,8 @@ func (fs *FlagSet) SetRequired(name string) error {
 	return nil
 }
 
-// SetDependencies sets dependencies for a flag (this flag requires the dependent flags to be set)
+// SetDependencies sets dependencies for a flag.
+// When this flag is set, all dependent flags must also be set, otherwise an error will be returned.
 func (fs *FlagSet) SetDependencies(name string, dependencies ...string) error {
 	flag := fs.Lookup(name)
 	if flag == nil {
@@ -606,17 +635,20 @@ func (fs *FlagSet) SetDependencies(name string, dependencies ...string) error {
 	return nil
 }
 
-// SetDescription sets the program description for help output
+// SetDescription sets the program description for help output.
+// This description will be displayed at the top of the help text.
 func (fs *FlagSet) SetDescription(description string) {
 	fs.description = description
 }
 
-// SetVersion sets the program version for help output
+// SetVersion sets the program version for help output.
+// This version will be displayed in the help text.
 func (fs *FlagSet) SetVersion(version string) {
 	fs.version = version
 }
 
-// SetGroup sets the group for a flag (for help organization)
+// SetGroup sets the group for a flag for help organization.
+// Flags with the same group will be displayed together in the help output.
 func (fs *FlagSet) SetGroup(name, group string) error {
 	flag := fs.Lookup(name)
 	if flag == nil {
@@ -626,7 +658,8 @@ func (fs *FlagSet) SetGroup(name, group string) error {
 	return nil
 }
 
-// ValidateAll validates all flags that have validators set
+// ValidateAll validates all flags that have validators set.
+// This is called automatically during Parse, but can be called manually if needed.
 func (fs *FlagSet) ValidateAll() error {
 	for name, flag := range fs.flags {
 		if flag.validator != nil {
@@ -638,7 +671,8 @@ func (fs *FlagSet) ValidateAll() error {
 	return nil
 }
 
-// ValidateRequired checks that all required flags are set
+// ValidateRequired checks that all required flags are set.
+// This is called automatically during Parse, but can be called manually if needed.
 func (fs *FlagSet) ValidateRequired() error {
 	for name, flag := range fs.flags {
 		if flag.required && !flag.changed {
@@ -648,7 +682,8 @@ func (fs *FlagSet) ValidateRequired() error {
 	return nil
 }
 
-// ValidateDependencies checks that all flag dependencies are satisfied
+// ValidateDependencies checks that all flag dependencies are satisfied.
+// This is called automatically during Parse, but can be called manually if needed.
 func (fs *FlagSet) ValidateDependencies() error {
 	for name, flag := range fs.flags {
 		if flag.changed && len(flag.dependencies) > 0 {
@@ -666,7 +701,8 @@ func (fs *FlagSet) ValidateDependencies() error {
 	return nil
 }
 
-// ValidateAllConstraints validates all constraints: validators, required flags, and dependencies
+// ValidateAllConstraints validates all constraints: validators, required flags, and dependencies.
+// This is called automatically during Parse, but can be called manually if needed.
 func (fs *FlagSet) ValidateAllConstraints() error {
 	if err := fs.ValidateRequired(); err != nil {
 		return err
@@ -680,14 +716,16 @@ func (fs *FlagSet) ValidateAllConstraints() error {
 	return nil
 }
 
-// Reset resets all flags to their default values
+// Reset resets all flags to their default values.
+// This is useful for testing or when you need to clear all flag values.
 func (fs *FlagSet) Reset() {
 	for _, flag := range fs.flags {
 		flag.Reset()
 	}
 }
 
-// ResetFlag resets a specific flag to its default value
+// ResetFlag resets a specific flag to its default value.
+// This is useful for testing or when you need to clear a specific flag value.
 func (fs *FlagSet) ResetFlag(name string) error {
 	if flag, exists := fs.flags[name]; exists {
 		flag.Reset()
@@ -696,7 +734,8 @@ func (fs *FlagSet) ResetFlag(name string) error {
 	return fmt.Errorf("flag --%s not found", name)
 }
 
-// GetString gets a flag value as string
+// GetString gets a flag value as string.
+// Returns the string value of the flag, or an empty string if the flag is not found.
 func (fs *FlagSet) GetString(name string) string {
 	if flag, exists := fs.flags[name]; exists {
 		if str, ok := flag.value.(string); ok {
@@ -707,7 +746,8 @@ func (fs *FlagSet) GetString(name string) string {
 	return ""
 }
 
-// GetInt gets a flag value as int
+// GetInt gets a flag value as int.
+// Returns the int value of the flag, or 0 if the flag is not found or not an int.
 func (fs *FlagSet) GetInt(name string) int {
 	if flag, exists := fs.flags[name]; exists {
 		if intVal, ok := flag.value.(int); ok {
@@ -717,7 +757,8 @@ func (fs *FlagSet) GetInt(name string) int {
 	return 0
 }
 
-// GetBool gets a flag value as bool
+// GetBool gets a flag value as bool.
+// Returns the bool value of the flag, or false if the flag is not found or not a bool.
 func (fs *FlagSet) GetBool(name string) bool {
 	if flag, exists := fs.flags[name]; exists {
 		if boolVal, ok := flag.value.(bool); ok {
@@ -727,7 +768,8 @@ func (fs *FlagSet) GetBool(name string) bool {
 	return false
 }
 
-// GetDuration gets a flag value as duration
+// GetDuration gets a flag value as duration.
+// Returns the time.Duration value of the flag, or 0 if the flag is not found or not a duration.
 func (fs *FlagSet) GetDuration(name string) time.Duration {
 	if flag, exists := fs.flags[name]; exists {
 		if durVal, ok := flag.value.(time.Duration); ok {
@@ -737,7 +779,8 @@ func (fs *FlagSet) GetDuration(name string) time.Duration {
 	return 0
 }
 
-// GetFloat64 gets a flag value as float64
+// GetFloat64 gets a flag value as float64.
+// Returns the float64 value of the flag, or 0.0 if the flag is not found or not a float64.
 func (fs *FlagSet) GetFloat64(name string) float64 {
 	if flag, exists := fs.flags[name]; exists {
 		if floatVal, ok := flag.value.(float64); ok {
@@ -747,7 +790,8 @@ func (fs *FlagSet) GetFloat64(name string) float64 {
 	return 0.0
 }
 
-// GetStringSlice gets a flag value as string slice
+// GetStringSlice gets a flag value as string slice.
+// Returns the []string value of the flag, or an empty slice if the flag is not found or not a string slice.
 func (fs *FlagSet) GetStringSlice(name string) []string {
 	if flag, exists := fs.flags[name]; exists {
 		if slice, ok := flag.value.([]string); ok {
@@ -757,7 +801,8 @@ func (fs *FlagSet) GetStringSlice(name string) []string {
 	return []string{}
 }
 
-// Help generates and returns the help text
+// Help generates and returns the help text.
+// This includes the program description, version, usage, and all flags organized by groups.
 func (fs *FlagSet) Help() string {
 	var help strings.Builder
 
@@ -869,29 +914,34 @@ func (fs *FlagSet) formatFlagHelp(flag *Flag) string {
 	return line.String()
 }
 
-// PrintHelp prints the help text to stdout
+// PrintHelp prints the help text to stdout.
+// This is a convenience method that calls Help() and prints the result.
 func (fs *FlagSet) PrintHelp() {
 	fmt.Print(fs.Help())
 }
 
-// SetConfigFile sets the configuration file path
+// SetConfigFile sets the configuration file path.
+// Configuration files are loaded with lower priority than command line arguments.
 func (fs *FlagSet) SetConfigFile(path string) {
 	fs.configFile = path
 }
 
-// AddConfigPath adds a path to search for configuration files
+// AddConfigPath adds a path to search for configuration files.
+// Multiple paths can be added for auto-discovery of configuration files.
 func (fs *FlagSet) AddConfigPath(path string) {
 	fs.configPaths = append(fs.configPaths, path)
 }
 
-// SetEnvPrefix sets the prefix for environment variable lookup
-// For example, if prefix is "MYAPP", flag "host" will look for "MYAPP_HOST"
+// SetEnvPrefix sets the prefix for environment variable lookup.
+// For example, if prefix is "MYAPP", flag "host" will look for "MYAPP_HOST".
+// This also enables environment variable lookup.
 func (fs *FlagSet) SetEnvPrefix(prefix string) {
 	fs.envPrefix = prefix
 	fs.enableEnvLookup = true
 }
 
-// SetEnvVar sets a custom environment variable name for a specific flag
+// SetEnvVar sets a custom environment variable name for a specific flag.
+// This overrides the default naming convention for environment variables.
 func (fs *FlagSet) SetEnvVar(flagName, envVarName string) error {
 	flag, exists := fs.flags[flagName]
 	if !exists {
@@ -901,13 +951,14 @@ func (fs *FlagSet) SetEnvVar(flagName, envVarName string) error {
 	return nil
 }
 
-// EnableEnvLookup enables environment variable lookup with default naming
-// Flag names are converted to uppercase with dashes replaced by underscores
+// EnableEnvLookup enables environment variable lookup with default naming.
+// Flag names are converted to uppercase with dashes replaced by underscores.
 func (fs *FlagSet) EnableEnvLookup() {
 	fs.enableEnvLookup = true
 }
 
-// LoadConfig loads configuration from file and applies it
+// LoadConfig loads configuration from file and applies it.
+// This is called automatically during Parse, but can be called manually if needed.
 func (fs *FlagSet) LoadConfig() error {
 	// Skip if already loaded
 	if fs.configLoaded {
@@ -1142,7 +1193,8 @@ func (fs *FlagSet) setFlagValueFromConfig(name string, value interface{}) error 
 	return nil
 }
 
-// LoadEnvironmentVariables loads values from environment variables
+// LoadEnvironmentVariables loads values from environment variables.
+// This is called automatically during Parse, but can be called manually if needed.
 func (fs *FlagSet) LoadEnvironmentVariables() error {
 	if !fs.enableEnvLookup {
 		return nil
