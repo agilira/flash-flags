@@ -49,7 +49,7 @@ jobs:
     - name: Security Scan (gosec)
       continue-on-error: true
       run: |
-        echo "🔍 Running security scan..."
+        echo "Running security scan..."
         gosec -conf .gosec.json ./... || true
         echo "✅ Security scan completed"
 
