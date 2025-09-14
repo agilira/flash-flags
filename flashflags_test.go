@@ -1,6 +1,6 @@
 // flash-flags.go: Ultra-fast command-line flag parsing for Go Tests
 //
-// Copyright (c) 2025 AGILira
+// Copyright (c) 2025 AGILira - A. Giordano
 // Series: an AGILira library
 // SPDX-License-Identifier: MPL-2.0
 
@@ -195,26 +195,30 @@ func TestShortFlags(t *testing.T) {
 }
 
 func TestValidation(t *testing.T) {
-	fs := New("test")
-
-	// Test string validation
-	fs.String("name", "", "Your name")
-	err := fs.SetValidator("name", func(v interface{}) error {
-		if str, ok := v.(string); ok {
-			if len(str) < 2 {
-				return fmt.Errorf("name must be at least 2 characters")
-			}
-		}
-		return nil
+	t.Run("StringValidation", func(t *testing.T) {
+		testStringValidation(t)
 	})
-	if err != nil {
+
+	t.Run("IntValidation", func(t *testing.T) {
+		testIntValidation(t)
+	})
+
+	t.Run("ValidateAllMethod", func(t *testing.T) {
+		testValidateAllMethod(t)
+	})
+}
+
+// testStringValidation tests string validation functionality
+func testStringValidation(t *testing.T) {
+	// Test valid value
+	fs := New("test")
+	fs.String("name", "", "Your name")
+	if err := fs.SetValidator("name", nameValidator()); err != nil {
 		t.Fatalf("SetValidator failed: %v", err)
 	}
 
-	// Test valid value
 	args := []string{"--name=John"}
-	err = fs.Parse(args)
-	if err != nil {
+	if err := fs.Parse(args); err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
 
@@ -225,40 +229,25 @@ func TestValidation(t *testing.T) {
 	// Test invalid value
 	fs = New("test")
 	fs.String("name", "", "Your name")
-	fs.SetValidator("name", func(v interface{}) error {
-		if str, ok := v.(string); ok {
-			if len(str) < 2 {
-				return fmt.Errorf("name must be at least 2 characters")
-			}
-		}
-		return nil
-	})
+	_ = fs.SetValidator("name", nameValidator())
 
 	args = []string{"--name=A"}
-	err = fs.Parse(args)
-	if err == nil {
+	if err := fs.Parse(args); err == nil {
 		t.Error("Expected validation error for short name")
 	}
+}
 
-	// Test int validation
-	fs = New("test")
+// testIntValidation tests int validation functionality
+func testIntValidation(t *testing.T) {
+	// Test valid port
+	fs := New("test")
 	fs.Int("port", 0, "Port number")
-	err = fs.SetValidator("port", func(v interface{}) error {
-		if intVal, ok := v.(int); ok {
-			if intVal < 1 || intVal > 65535 {
-				return fmt.Errorf("port must be between 1 and 65535")
-			}
-		}
-		return nil
-	})
-	if err != nil {
+	if err := fs.SetValidator("port", portValidator()); err != nil {
 		t.Fatalf("SetValidator failed: %v", err)
 	}
 
-	// Valid port
-	args = []string{"--port=8080"}
-	err = fs.Parse(args)
-	if err != nil {
+	args := []string{"--port=8080"}
+	if err := fs.Parse(args); err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
 
@@ -266,53 +255,33 @@ func TestValidation(t *testing.T) {
 		t.Errorf("Expected 8080, got %d", fs.GetInt("port"))
 	}
 
-	// Invalid port
+	// Test invalid port
 	fs = New("test")
 	fs.Int("port", 0, "Port number")
-	fs.SetValidator("port", func(v interface{}) error {
-		if intVal, ok := v.(int); ok {
-			if intVal < 1 || intVal > 65535 {
-				return fmt.Errorf("port must be between 1 and 65535")
-			}
-		}
-		return nil
-	})
+	_ = fs.SetValidator("port", portValidator())
 
 	args = []string{"--port=70000"}
-	err = fs.Parse(args)
-	if err == nil {
+	if err := fs.Parse(args); err == nil {
 		t.Error("Expected validation error for invalid port")
 	}
+}
 
-	// Test ValidateAll
-	fs = New("test")
+// testValidateAllMethod tests the ValidateAll method
+func testValidateAllMethod(t *testing.T) {
+	fs := New("test")
 	fs.String("name", "TestName", "Your name")
 	fs.Int("port", 8080, "Port number")
 
-	fs.SetValidator("name", func(v interface{}) error {
-		if str, ok := v.(string); ok {
-			if len(str) < 2 {
-				return fmt.Errorf("name too short")
-			}
-		}
-		return nil
-	})
-
-	fs.SetValidator("port", func(v interface{}) error {
-		if intVal, ok := v.(int); ok {
-			if intVal < 1 || intVal > 65535 {
-				return fmt.Errorf("invalid port range")
-			}
-		}
-		return nil
-	})
+	_ = fs.SetValidator("name", nameValidator())
+	_ = fs.SetValidator("port", portValidator())
 
 	// Should pass validation with default values
-	err = fs.ValidateAll()
-	if err != nil {
+	if err := fs.ValidateAll(); err != nil {
 		t.Errorf("ValidateAll failed: %v", err)
 	}
-} // Test string slice parsing
+}
+
+// Test string slice parsing
 func TestStringSlice(t *testing.T) {
 	flags := New("test")
 	flags.StringSlice("hosts", []string{"localhost"}, "Server hosts")
@@ -587,89 +556,108 @@ func BenchmarkConcurrent(b *testing.B) {
 
 func TestReset(t *testing.T) {
 	t.Run("ResetAllFlags", func(t *testing.T) {
-		fs := New("test")
-
-		// Create flags with default values
-		strFlag := fs.String("str", "default", "String flag")
-		intFlag := fs.Int("num", 42, "Int flag")
-		boolFlag := fs.Bool("verbose", false, "Bool flag")
-		float64Flag := fs.Float64("rate", 3.14, "Float flag")
-
-		// Parse some arguments to change values
-		args := []string{"--str", "changed", "--num", "100", "--verbose", "--rate", "2.71"}
-		if err := fs.Parse(args); err != nil {
-			t.Fatalf("Parse failed: %v", err)
-		}
-
-		// Verify values changed
-		if *strFlag != "changed" {
-			t.Errorf("Expected strFlag to be 'changed', got '%s'", *strFlag)
-		}
-		if *intFlag != 100 {
-			t.Errorf("Expected intFlag to be 100, got %d", *intFlag)
-		}
-		if !*boolFlag {
-			t.Errorf("Expected boolFlag to be true, got %t", *boolFlag)
-		}
-		if *float64Flag != 2.71 {
-			t.Errorf("Expected float64Flag to be 2.71, got %f", *float64Flag)
-		}
-
-		// Reset all flags
-		fs.Reset()
-
-		// Verify values are back to defaults
-		if *strFlag != "default" {
-			t.Errorf("After reset, expected strFlag to be 'default', got '%s'", *strFlag)
-		}
-		if *intFlag != 42 {
-			t.Errorf("After reset, expected intFlag to be 42, got %d", *intFlag)
-		}
-		if *boolFlag {
-			t.Errorf("After reset, expected boolFlag to be false, got %t", *boolFlag)
-		}
-		if *float64Flag != 3.14 {
-			t.Errorf("After reset, expected float64Flag to be 3.14, got %f", *float64Flag)
-		}
+		testResetAllFlags(t)
 	})
 
 	t.Run("ResetSpecificFlag", func(t *testing.T) {
-		fs := New("test")
-
-		strFlag := fs.String("str", "default", "String flag")
-		intFlag := fs.Int("num", 42, "Int flag")
-
-		// Parse arguments
-		args := []string{"--str", "changed", "--num", "100"}
-		if err := fs.Parse(args); err != nil {
-			t.Fatalf("Parse failed: %v", err)
-		}
-
-		// Reset only string flag
-		if err := fs.ResetFlag("str"); err != nil {
-			t.Fatalf("ResetFlag failed: %v", err)
-		}
-
-		// String flag should be reset, int flag unchanged
-		if *strFlag != "default" {
-			t.Errorf("After reset, expected strFlag to be 'default', got '%s'", *strFlag)
-		}
-		if *intFlag != 100 {
-			t.Errorf("After reset, expected intFlag to remain 100, got %d", *intFlag)
-		}
+		testResetSpecificFlag(t)
 	})
 
 	t.Run("ResetNonExistentFlag", func(t *testing.T) {
 		fs := New("test")
-
 		err := fs.ResetFlag("nonexistent")
-		if err == nil {
-			t.Error("Expected error when resetting non-existent flag")
-		}
-		if err.Error() != "flag --nonexistent not found" {
-			t.Errorf("Expected 'flag --nonexistent not found' error, got: %v", err)
-		}
+		verifyExpectedError(t, err, "flag --nonexistent not found", "Expected error when resetting non-existent flag")
 	})
+}
+
+// testResetAllFlags tests resetting all flags to their defaults
+func testResetAllFlags(t *testing.T) {
+	fs := New("test")
+
+	// Create flags with default values
+	strFlag := fs.String("str", "default", "String flag")
+	intFlag := fs.Int("num", 42, "Int flag")
+	boolFlag := fs.Bool("verbose", false, "Bool flag")
+	float64Flag := fs.Float64("rate", 3.14, "Float flag")
+
+	// Parse some arguments to change values
+	args := []string{"--str", "changed", "--num", "100", "--verbose", "--rate", "2.71"}
+	if err := fs.Parse(args); err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	// Verify values changed
+	verifyChangedValues(t, strFlag, intFlag, boolFlag, float64Flag)
+
+	// Reset all flags
+	fs.Reset()
+
+	// Verify values are back to defaults
+	verifyDefaultValues(t, strFlag, intFlag, boolFlag, float64Flag)
+}
+
+// testResetSpecificFlag tests resetting a specific flag
+func testResetSpecificFlag(t *testing.T) {
+	fs := New("test")
+
+	strFlag := fs.String("str", "default", "String flag")
+	intFlag := fs.Int("num", 42, "Int flag")
+
+	// Parse arguments
+	args := []string{"--str", "changed", "--num", "100"}
+	if err := fs.Parse(args); err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	// Reset only string flag
+	if err := fs.ResetFlag("str"); err != nil {
+		t.Fatalf("ResetFlag failed: %v", err)
+	}
+
+	// String flag should be reset, int flag unchanged
+	verifyResetSpecificValues(t, strFlag, intFlag)
+}
+
+// verifyChangedValues checks that flag values were changed after parsing
+func verifyChangedValues(t *testing.T, strFlag *string, intFlag *int, boolFlag *bool, float64Flag *float64) {
+	if *strFlag != "changed" {
+		t.Errorf("Expected strFlag to be 'changed', got '%s'", *strFlag)
+	}
+	if *intFlag != 100 {
+		t.Errorf("Expected intFlag to be 100, got %d", *intFlag)
+	}
+	if !*boolFlag {
+		t.Errorf("Expected boolFlag to be true, got %t", *boolFlag)
+	}
+	if *float64Flag != 2.71 {
+		t.Errorf("Expected float64Flag to be 2.71, got %f", *float64Flag)
+	}
+}
+
+// verifyDefaultValues checks that flag values are back to their defaults
+func verifyDefaultValues(t *testing.T, strFlag *string, intFlag *int, boolFlag *bool, float64Flag *float64) {
+	if *strFlag != "default" {
+		t.Errorf("After reset, expected strFlag to be 'default', got '%s'", *strFlag)
+	}
+	if *intFlag != 42 {
+		t.Errorf("After reset, expected intFlag to be 42, got %d", *intFlag)
+	}
+	if *boolFlag {
+		t.Errorf("After reset, expected boolFlag to be false, got %t", *boolFlag)
+	}
+	if *float64Flag != 3.14 {
+		t.Errorf("After reset, expected float64Flag to be 3.14, got %f", *float64Flag)
+	}
+}
+
+// verifyResetSpecificValues checks values after resetting a specific flag
+func verifyResetSpecificValues(t *testing.T, strFlag *string, intFlag *int) {
+	if *strFlag != "default" {
+		t.Errorf("After reset, expected strFlag to be 'default', got '%s'", *strFlag)
+	}
+	if *intFlag != 100 {
+		t.Errorf("After reset, expected intFlag to remain 100, got %d", *intFlag)
+	}
 }
 
 func TestRequiredFlags(t *testing.T) {
@@ -677,7 +665,7 @@ func TestRequiredFlags(t *testing.T) {
 		fs := New("test")
 
 		name := fs.String("name", "", "Name flag")
-		fs.SetRequired("name")
+		_ = fs.SetRequired("name")
 
 		args := []string{"--name", "test"}
 		if err := fs.Parse(args); err != nil {
@@ -693,7 +681,7 @@ func TestRequiredFlags(t *testing.T) {
 		fs := New("test")
 
 		fs.String("name", "", "Name flag")
-		fs.SetRequired("name")
+		_ = fs.SetRequired("name")
 
 		args := []string{}
 		err := fs.Parse(args)
@@ -720,93 +708,107 @@ func TestRequiredFlags(t *testing.T) {
 
 func TestFlagDependencies(t *testing.T) {
 	t.Run("DependenciesSatisfied", func(t *testing.T) {
-		fs := New("test")
-
-		host := fs.String("host", "localhost", "Host flag")
-		port := fs.Int("port", 8080, "Port flag")
-		fs.SetDependencies("port", "host")
-
-		args := []string{"--host", "myhost", "--port", "3000"}
-		if err := fs.Parse(args); err != nil {
-			t.Fatalf("Parse failed: %v", err)
-		}
-
-		if *host != "myhost" {
-			t.Errorf("Expected host to be 'myhost', got '%s'", *host)
-		}
-		if *port != 3000 {
-			t.Errorf("Expected port to be 3000, got %d", *port)
-		}
+		testDependenciesSatisfied(t)
 	})
 
 	t.Run("DependencyMissing", func(t *testing.T) {
-		fs := New("test")
-
-		fs.String("host", "localhost", "Host flag")
-		fs.Int("port", 8080, "Port flag")
-		fs.SetDependencies("port", "host")
-
-		args := []string{"--port", "3000"}
-		err := fs.Parse(args)
-		if err == nil {
-			t.Error("Expected error when dependency is missing")
-		}
-		if err.Error() != "flag --port requires --host to be set" {
-			t.Errorf("Expected 'flag --port requires --host to be set' error, got: %v", err)
-		}
+		testDependencyMissing(t)
 	})
 
 	t.Run("MultipleDependencies", func(t *testing.T) {
-		fs := New("test")
-
-		user := fs.String("user", "", "User flag")
-		pass := fs.String("pass", "", "Password flag")
-		auth := fs.Bool("auth", false, "Auth flag")
-		fs.SetDependencies("auth", "user", "pass")
-
-		args := []string{"--user", "admin", "--pass", "secret", "--auth"}
-		if err := fs.Parse(args); err != nil {
-			t.Fatalf("Parse failed: %v", err)
-		}
-
-		if *user != "admin" {
-			t.Errorf("Expected user to be 'admin', got '%s'", *user)
-		}
-		if *pass != "secret" {
-			t.Errorf("Expected pass to be 'secret', got '%s'", *pass)
-		}
-		if !*auth {
-			t.Errorf("Expected auth to be true, got %t", *auth)
-		}
+		testMultipleDependencies(t)
 	})
 
 	t.Run("NonExistentDependency", func(t *testing.T) {
-		fs := New("test")
-
-		fs.String("name", "", "Name flag")
-		fs.SetDependencies("name", "nonexistent")
-
-		args := []string{"--name", "test"}
-		err := fs.Parse(args)
-		if err == nil {
-			t.Error("Expected error when dependency doesn't exist")
-		}
-		if err.Error() != "flag --name depends on non-existent flag --nonexistent" {
-			t.Errorf("Expected 'flag --name depends on non-existent flag --nonexistent' error, got: %v", err)
-		}
+		testNonExistentDependency(t)
 	})
 
 	t.Run("SetDependenciesNonExistentFlag", func(t *testing.T) {
 		fs := New("test")
-
 		err := fs.SetDependencies("nonexistent", "something")
-		if err == nil {
-			t.Error("Expected error when setting dependencies on non-existent flag")
-		}
-		if err.Error() != "flag not found: nonexistent" {
-			t.Errorf("Expected 'flag not found: nonexistent' error, got: %v", err)
-		}
+		verifyExpectedError(t, err, "flag not found: nonexistent", "Expected error when setting dependencies on non-existent flag")
 	})
+}
+
+// testDependenciesSatisfied tests when all dependencies are satisfied
+func testDependenciesSatisfied(t *testing.T) {
+	fs := New("test")
+
+	host := fs.String("host", "localhost", "Host flag")
+	port := fs.Int("port", 8080, "Port flag")
+	_ = fs.SetDependencies("port", "host")
+
+	args := []string{"--host", "myhost", "--port", "3000"}
+	if err := fs.Parse(args); err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	verifyDependencySatisfiedValues(t, host, port)
+}
+
+// testDependencyMissing tests when a required dependency is missing
+func testDependencyMissing(t *testing.T) {
+	fs := New("test")
+
+	fs.String("host", "localhost", "Host flag")
+	fs.Int("port", 8080, "Port flag")
+	_ = fs.SetDependencies("port", "host")
+
+	args := []string{"--port", "3000"}
+	err := fs.Parse(args)
+	verifyExpectedError(t, err, "flag --port requires --host to be set", "Expected error when dependency is missing")
+}
+
+// testMultipleDependencies tests flags with multiple dependencies
+func testMultipleDependencies(t *testing.T) {
+	fs := New("test")
+
+	user := fs.String("user", "", "User flag")
+	pass := fs.String("pass", "", "Password flag")
+	auth := fs.Bool("auth", false, "Auth flag")
+	_ = fs.SetDependencies("auth", "user", "pass")
+
+	args := []string{"--user", "admin", "--pass", "secret", "--auth"}
+	if err := fs.Parse(args); err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	verifyMultipleDependencyValues(t, user, pass, auth)
+}
+
+// testNonExistentDependency tests dependencies on non-existent flags
+func testNonExistentDependency(t *testing.T) {
+	fs := New("test")
+
+	fs.String("name", "", "Name flag")
+	_ = fs.SetDependencies("name", "nonexistent")
+
+	args := []string{"--name", "test"}
+	err := fs.Parse(args)
+	verifyExpectedError(t, err, "flag --name depends on non-existent flag --nonexistent", "Expected error when dependency doesn't exist")
+}
+
+// verifyDependencySatisfiedValues checks values when dependencies are satisfied
+func verifyDependencySatisfiedValues(t *testing.T, host *string, port *int) {
+	if *host != "myhost" {
+		t.Errorf("Expected host to be 'myhost', got '%s'", *host)
+	}
+	if *port != 3000 {
+		t.Errorf("Expected port to be 3000, got %d", *port)
+	}
+}
+
+// verifyMultipleDependencyValues checks values for multiple dependencies test
+func verifyMultipleDependencyValues(t *testing.T, user, pass *string, auth *bool) {
+	if *user != "admin" {
+		t.Errorf("Expected user to be 'admin', got '%s'", *user)
+	}
+	if *pass != "secret" {
+		t.Errorf("Expected pass to be 'secret', got '%s'", *pass)
+	}
+	if !*auth {
+		t.Errorf("Expected auth to be true, got %t", *auth)
+	}
 }
 
 func TestHelpSystem(t *testing.T) {
@@ -819,383 +821,394 @@ func TestHelpSystem(t *testing.T) {
 		port := fs.IntVar("port", "p", 8080, "Server port")
 		_ = fs.Bool("verbose", false, "Enable verbose output")
 
-		fs.SetRequired("name")
-		fs.SetGroup("port", "Server Options")
+		_ = fs.SetRequired("name")
+		_ = fs.SetGroup("port", "Server Options")
 
 		help := fs.Help()
 
-		// Check that help contains expected elements
-		if !strings.Contains(help, "A test application for demonstration") {
-			t.Error("Help should contain description")
-		}
-		if !strings.Contains(help, "Version: 1.0.0") {
-			t.Error("Help should contain version")
-		}
-		if !strings.Contains(help, "Usage: myapp [options]") {
-			t.Error("Help should contain usage line")
-		}
-		if !strings.Contains(help, "--name") {
-			t.Error("Help should contain --name flag")
-		}
-		if !strings.Contains(help, "-p, --port") {
-			t.Error("Help should contain short and long flag format")
-		}
-		if !strings.Contains(help, "[REQUIRED]") {
-			t.Error("Help should indicate required flags")
-		}
-		if !strings.Contains(help, "Server Options:") {
-			t.Error("Help should contain group headers")
-		}
-		if !strings.Contains(help, "(default: 8080)") {
-			t.Error("Help should show default values")
-		}
-
-		// Verify port is not nil (used in test)
-		if port == nil {
-			t.Error("Port should not be nil")
-		}
+		// Check that help contains expected elements using helper
+		verifyBasicHelpContent(t, help, port)
 	})
 
 	t.Run("HelpFlagHandling", func(t *testing.T) {
-		fs := New("test")
-		_ = fs.String("name", "", "Name flag")
-
-		// Test --help
-		err := fs.Parse([]string{"--help"})
-		if err == nil {
-			t.Error("Expected error when --help is used")
-		}
-		if err.Error() != "help requested" {
-			t.Errorf("Expected 'help requested' error, got: %v", err)
-		}
+		testHelpFlagHandling(t, "--help")
 	})
 
 	t.Run("ShortHelpFlagHandling", func(t *testing.T) {
-		fs := New("test")
-		_ = fs.String("name", "", "Name flag")
-
-		// Test -h
-		err := fs.Parse([]string{"-h"})
-		if err == nil {
-			t.Error("Expected error when -h is used")
-		}
-		if err.Error() != "help requested" {
-			t.Errorf("Expected 'help requested' error, got: %v", err)
-		}
+		testHelpFlagHandling(t, "-h")
 	})
 
 	t.Run("SetGroupNonExistentFlag", func(t *testing.T) {
 		fs := New("test")
-
 		err := fs.SetGroup("nonexistent", "Some Group")
-		if err == nil {
-			t.Error("Expected error when setting group on non-existent flag")
-		}
-		if err.Error() != "flag not found: nonexistent" {
-			t.Errorf("Expected 'flag not found: nonexistent' error, got: %v", err)
-		}
+		verifyExpectedError(t, err, "flag not found: nonexistent", "Expected error when setting group on non-existent flag")
 	})
 
 	t.Run("HelpWithDependencies", func(t *testing.T) {
 		fs := New("test")
-
 		_ = fs.String("user", "", "Username")
 		_ = fs.String("pass", "", "Password")
 		_ = fs.Bool("auth", false, "Enable authentication")
-
-		fs.SetDependencies("auth", "user", "pass")
+		_ = fs.SetDependencies("auth", "user", "pass")
 
 		help := fs.Help()
-		if !strings.Contains(help, "[depends on: user, pass]") {
-			t.Error("Help should show dependencies")
-		}
+		verifyHelpContains(t, help, "[depends on: user, pass]", "Help should show dependencies")
 	})
+}
+
+// verifyBasicHelpContent checks that help output contains all expected basic elements
+func verifyBasicHelpContent(t *testing.T, help string, port *int) {
+	expectedContents := []struct {
+		content string
+		message string
+	}{
+		{"A test application for demonstration", "Help should contain description"},
+		{"Version: 1.0.0", "Help should contain version"},
+		{"Usage: myapp [options]", "Help should contain usage line"},
+		{"--name", "Help should contain --name flag"},
+		{"-p, --port", "Help should contain short and long flag format"},
+		{"[REQUIRED]", "Help should indicate required flags"},
+		{"Server Options:", "Help should contain group headers"},
+		{"(default: 8080)", "Help should show default values"},
+	}
+
+	for _, expected := range expectedContents {
+		verifyHelpContains(t, help, expected.content, expected.message)
+	}
+
+	// Verify port is not nil
+	if port == nil {
+		t.Error("Port should not be nil")
+	}
+}
+
+// testHelpFlagHandling tests help flag handling for both -h and --help
+func testHelpFlagHandling(t *testing.T, helpFlag string) {
+	fs := New("test")
+	_ = fs.String("name", "", "Name flag")
+
+	err := fs.Parse([]string{helpFlag})
+	verifyExpectedError(t, err, "help requested", "Expected error when "+helpFlag+" is used")
+}
+
+// verifyHelpContains checks if help output contains expected content
+func verifyHelpContains(t *testing.T, help, expectedContent, errorMessage string) {
+	if !strings.Contains(help, expectedContent) {
+		t.Error(errorMessage)
+	}
+}
+
+// verifyExpectedError checks if error matches expected value
+func verifyExpectedError(t *testing.T, err error, expectedMsg, contextMsg string) {
+	if err == nil {
+		t.Error(contextMsg)
+		return
+	}
+	if err.Error() != expectedMsg {
+		t.Errorf("Expected '%s' error, got: %v", expectedMsg, err)
+	}
 }
 
 func TestConfigurationFiles(t *testing.T) {
 	t.Run("LoadJSONConfig", func(t *testing.T) {
-		// Create a temporary config file
-		configContent := `{
-			"host": "config-host",
-			"port": 9000,
-			"debug": true,
-			"rate": 2.5,
-			"tags": ["config", "test"]
-		}`
-
-		tmpfile, err := os.CreateTemp("", "test-config-*.json")
-		if err != nil {
-			t.Fatalf("Failed to create temp file: %v", err)
-		}
-		defer os.Remove(tmpfile.Name())
-
-		if _, err := tmpfile.Write([]byte(configContent)); err != nil {
-			t.Fatalf("Failed to write config file: %v", err)
-		}
-		tmpfile.Close()
-
-		// Setup flags
-		fs := New("test")
-		host := fs.String("host", "default", "Host flag")
-		port := fs.Int("port", 8080, "Port flag")
-		debug := fs.Bool("debug", false, "Debug flag")
-		rate := fs.Float64("rate", 1.0, "Rate flag")
-		tags := fs.StringSlice("tags", []string{}, "Tags flag")
-
-		// Set config file and parse
-		fs.SetConfigFile(tmpfile.Name())
-
-		// Parse with no command line args (should use config values)
-		if err := fs.Parse([]string{}); err != nil {
-			t.Fatalf("Parse failed: %v", err)
-		}
-
-		// Verify config values were loaded
-		if *host != "config-host" {
-			t.Errorf("Expected host from config 'config-host', got '%s'", *host)
-		}
-		if *port != 9000 {
-			t.Errorf("Expected port from config 9000, got %d", *port)
-		}
-		if !*debug {
-			t.Errorf("Expected debug from config true, got %t", *debug)
-		}
-		if *rate != 2.5 {
-			t.Errorf("Expected rate from config 2.5, got %f", *rate)
-		}
-		if len(*tags) != 2 || (*tags)[0] != "config" || (*tags)[1] != "test" {
-			t.Errorf("Expected tags from config ['config', 'test'], got %v", *tags)
-		}
+		testLoadJSONConfig(t)
 	})
 
 	t.Run("CommandLineOverridesConfig", func(t *testing.T) {
-		// Create a temporary config file
-		configContent := `{
-			"host": "config-host",
-			"port": 9000
-		}`
-
-		tmpfile, err := os.CreateTemp("", "test-override-*.json")
-		if err != nil {
-			t.Fatalf("Failed to create temp file: %v", err)
-		}
-		defer os.Remove(tmpfile.Name())
-
-		if _, err := tmpfile.Write([]byte(configContent)); err != nil {
-			t.Fatalf("Failed to write config file: %v", err)
-		}
-		tmpfile.Close()
-
-		// Setup flags
-		fs := New("test")
-		host := fs.String("host", "default", "Host flag")
-		port := fs.Int("port", 8080, "Port flag")
-
-		// Set config file
-		fs.SetConfigFile(tmpfile.Name())
-
-		// Parse with command line args that should override config
-		args := []string{"--host", "cmdline-host"}
-		if err := fs.Parse(args); err != nil {
-			t.Fatalf("Parse failed: %v", err)
-		}
-
-		// Command line should override config, config should override default
-		if *host != "cmdline-host" {
-			t.Errorf("Expected host from command line 'cmdline-host', got '%s'", *host)
-		}
-		if *port != 9000 {
-			t.Errorf("Expected port from config 9000, got %d", *port)
-		}
+		testCommandLineOverridesConfig(t)
 	})
 
 	t.Run("ConfigFileNotFound", func(t *testing.T) {
-		fs := New("test")
-		_ = fs.String("host", "default", "Host flag")
-
-		// Set non-existent config file (should not cause error, just skip)
-		fs.SetConfigFile("/non/existent/config.json")
-
-		if err := fs.Parse([]string{}); err != nil {
-			t.Fatalf("Parse should not fail when config file doesn't exist: %v", err)
-		}
+		testConfigFileNotFound(t)
 	})
 
 	t.Run("InvalidJSONConfig", func(t *testing.T) {
-		// Create invalid JSON config
-		configContent := `{ "host": "test", invalid json }`
-
-		tmpfile, err := os.CreateTemp("", "test-invalid-*.json")
-		if err != nil {
-			t.Fatalf("Failed to create temp file: %v", err)
-		}
-		defer os.Remove(tmpfile.Name())
-
-		if _, err := tmpfile.Write([]byte(configContent)); err != nil {
-			t.Fatalf("Failed to write config file: %v", err)
-		}
-		tmpfile.Close()
-
-		fs := New("test")
-		_ = fs.String("host", "default", "Host flag")
-		fs.SetConfigFile(tmpfile.Name())
-
-		err = fs.Parse([]string{})
-		if err == nil {
-			t.Error("Expected error when parsing invalid JSON config")
-		}
-		if !strings.Contains(err.Error(), "config file error") {
-			t.Errorf("Expected config file error, got: %v", err)
-		}
+		testInvalidJSONConfig(t)
 	})
 
 	t.Run("ConfigValidation", func(t *testing.T) {
-		// Create config with invalid value
-		configContent := `{
-			"port": 99999
-		}`
-
-		tmpfile, err := os.CreateTemp("", "test-validation-*.json")
-		if err != nil {
-			t.Fatalf("Failed to create temp file: %v", err)
-		}
-		defer os.Remove(tmpfile.Name())
-
-		if _, err := tmpfile.Write([]byte(configContent)); err != nil {
-			t.Fatalf("Failed to write config file: %v", err)
-		}
-		tmpfile.Close()
-
-		fs := New("test")
-		_ = fs.Int("port", 8080, "Port flag")
-
-		// Set validator that rejects the config value
-		fs.SetValidator("port", func(val interface{}) error {
-			port := val.(int)
-			if port > 65535 {
-				return fmt.Errorf("port must be <= 65535")
-			}
-			return nil
-		})
-
-		fs.SetConfigFile(tmpfile.Name())
-
-		err = fs.Parse([]string{})
-		if err == nil {
-			t.Error("Expected validation error from config")
-		}
-		if !strings.Contains(err.Error(), "port must be <= 65535") {
-			t.Errorf("Expected port validation error, got: %v", err)
-		}
+		testConfigValidation(t)
 	})
+}
+
+// testLoadJSONConfig tests loading a basic JSON configuration file
+func testLoadJSONConfig(t *testing.T) {
+	configContent := `{
+		"host": "config-host",
+		"port": 9000,
+		"debug": true,
+		"rate": 2.5,
+		"tags": ["config", "test"]
+	}`
+
+	tmpfile := createTempConfigFile(t, configContent, "test-config-*.json")
+	defer os.Remove(tmpfile)
+
+	fs, host, port, debug, rate, tags := setupBasicFlags("test")
+	fs.SetConfigFile(tmpfile)
+
+	if err := fs.Parse([]string{}); err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	verifyConfigValues(t, host, port, debug, rate, tags)
+}
+
+// testCommandLineOverridesConfig tests that command line args override config
+func testCommandLineOverridesConfig(t *testing.T) {
+	configContent := `{
+		"host": "config-host",
+		"port": 9000
+	}`
+
+	tmpfile := createTempConfigFile(t, configContent, "test-override-*.json")
+	defer os.Remove(tmpfile)
+
+	fs := New("test")
+	host := fs.String("host", "default", "Host flag")
+	port := fs.Int("port", 8080, "Port flag")
+	fs.SetConfigFile(tmpfile)
+
+	args := []string{"--host", "cmdline-host"}
+	if err := fs.Parse(args); err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	verifyOverrideValues(t, host, port)
+}
+
+// testConfigFileNotFound tests handling of non-existent config files
+func testConfigFileNotFound(t *testing.T) {
+	fs := New("test")
+	_ = fs.String("host", "default", "Host flag")
+
+	// Set non-existent config file (should not cause error, just skip)
+	fs.SetConfigFile("/non/existent/config.json")
+
+	if err := fs.Parse([]string{}); err != nil {
+		t.Fatalf("Parse should not fail when config file doesn't exist: %v", err)
+	}
+}
+
+// testInvalidJSONConfig tests handling of invalid JSON in config files
+func testInvalidJSONConfig(t *testing.T) {
+	configContent := `{ "host": "test", invalid json }`
+	tmpfile := createTempConfigFile(t, configContent, "test-invalid-*.json")
+	defer os.Remove(tmpfile)
+
+	fs := New("test")
+	_ = fs.String("host", "default", "Host flag")
+	fs.SetConfigFile(tmpfile)
+
+	err := fs.Parse([]string{})
+	verifyConfigParseError(t, err, "config file error")
+}
+
+// testConfigValidation tests validation of config file values
+func testConfigValidation(t *testing.T) {
+	configContent := `{
+		"port": 99999
+	}`
+
+	tmpfile, err := os.CreateTemp("", "test-validation-*.json")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer func() { _ = os.Remove(tmpfile.Name()) }()
+
+	if _, err := tmpfile.Write([]byte(configContent)); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+	_ = tmpfile.Close()
+
+	fs := New("test")
+	_ = fs.Int("port", 8080, "Port flag")
+
+	// Set validator that rejects the config value
+	_ = fs.SetValidator("port", func(val interface{}) error {
+		port, ok := val.(int)
+		if !ok {
+			return fmt.Errorf("expected int, got %T", val)
+		}
+		if port > 65535 {
+			return fmt.Errorf("port must be <= 65535")
+		}
+		return nil
+	})
+
+	fs.SetConfigFile(tmpfile.Name())
+
+	err = fs.Parse([]string{})
+	verifyConfigParseError(t, err, "port must be <= 65535")
+}
+
+// verifyOverrideValues checks command line override behavior
+func verifyOverrideValues(t *testing.T, host *string, port *int) {
+	if *host != "cmdline-host" {
+		t.Errorf("Expected host from command line 'cmdline-host', got '%s'", *host)
+	}
+	if *port != 9000 {
+		t.Errorf("Expected port from config 9000, got %d", *port)
+	}
+}
+
+// verifyConfigParseError checks for expected config parsing errors
+func verifyConfigParseError(t *testing.T, err error, expectedError string) {
+	if err == nil {
+		t.Error("Expected error when parsing invalid config")
+		return
+	}
+	if !strings.Contains(err.Error(), expectedError) {
+		t.Errorf("Expected error containing '%s', got: %v", expectedError, err)
+	}
 }
 
 // TestEnvironmentVariables tests environment variable support
 func TestEnvironmentVariables(t *testing.T) {
 	t.Run("BasicEnvSupport", func(t *testing.T) {
-		// Set environment variables
-		os.Setenv("TEST_HOST", "env.example.com")
-		os.Setenv("TEST_PORT", "9090")
-		os.Setenv("TEST_DEBUG", "true")
-		defer os.Unsetenv("TEST_HOST")
-		defer os.Unsetenv("TEST_PORT")
-		defer os.Unsetenv("TEST_DEBUG")
-
-		fs := New("myapp")
-		fs.SetEnvPrefix("TEST")
-
-		host := fs.String("host", "localhost", "Host address")
-		port := fs.Int("port", 8080, "Port number")
-		debug := fs.Bool("debug", false, "Debug mode")
-
-		err := fs.Parse([]string{})
-		if err != nil {
-			t.Fatalf("Parse failed: %v", err)
-		}
-
-		if *host != "env.example.com" {
-			t.Errorf("Expected host from env 'env.example.com', got '%s'", *host)
-		}
-		if *port != 9090 {
-			t.Errorf("Expected port from env 9090, got %d", *port)
-		}
-		if *debug != true {
-			t.Errorf("Expected debug from env true, got %v", *debug)
-		}
+		testBasicEnvSupport(t)
 	})
 
 	t.Run("CommandLineOverridesEnv", func(t *testing.T) {
-		// Set environment variables
-		os.Setenv("TEST_HOST", "env.example.com")
-		os.Setenv("TEST_PORT", "9090")
-		defer os.Unsetenv("TEST_HOST")
-		defer os.Unsetenv("TEST_PORT")
-
-		fs := New("myapp")
-		fs.SetEnvPrefix("TEST")
-
-		host := fs.String("host", "localhost", "Host address")
-		port := fs.Int("port", 8080, "Port number")
-
-		// Command line should override environment
-		err := fs.Parse([]string{"--host", "cmd.example.com", "--port", "3000"})
-		if err != nil {
-			t.Fatalf("Parse failed: %v", err)
-		}
-
-		if *host != "cmd.example.com" {
-			t.Errorf("Expected host from command line 'cmd.example.com', got '%s'", *host)
-		}
-		if *port != 3000 {
-			t.Errorf("Expected port from command line 3000, got %d", *port)
-		}
+		testCommandLineOverridesEnv(t)
 	})
 
 	t.Run("CustomEnvVarNames", func(t *testing.T) {
-		// Set custom environment variable
-		os.Setenv("CUSTOM_SERVER_HOST", "custom.example.com")
-		defer os.Unsetenv("CUSTOM_SERVER_HOST")
-
-		fs := New("myapp")
-		fs.EnableEnvLookup()
-
-		host := fs.String("host", "localhost", "Host address")
-
-		// Set custom environment variable name
-		err := fs.SetEnvVar("host", "CUSTOM_SERVER_HOST")
-		if err != nil {
-			t.Fatalf("SetEnvVar failed: %v", err)
-		}
-
-		err = fs.Parse([]string{})
-		if err != nil {
-			t.Fatalf("Parse failed: %v", err)
-		}
-
-		if *host != "custom.example.com" {
-			t.Errorf("Expected host from custom env 'custom.example.com', got '%s'", *host)
-		}
+		testCustomEnvVarNames(t)
 	})
 
 	t.Run("DefaultNaming", func(t *testing.T) {
-		// Set environment variable with default naming
-		os.Setenv("DB_HOST", "db.example.com")
-		defer os.Unsetenv("DB_HOST")
-
-		fs := New("myapp")
-		fs.EnableEnvLookup()
-
-		dbHost := fs.String("db-host", "localhost", "Database host")
-
-		err := fs.Parse([]string{})
-		if err != nil {
-			t.Fatalf("Parse failed: %v", err)
-		}
-
-		if *dbHost != "db.example.com" {
-			t.Errorf("Expected db-host from env 'db.example.com', got '%s'", *dbHost)
-		}
+		testDefaultNaming(t)
 	})
+}
+
+// testBasicEnvSupport tests basic environment variable support
+func testBasicEnvSupport(t *testing.T) {
+	// Set environment variables
+	_ = os.Setenv("TEST_HOST", "env.example.com")
+	_ = os.Setenv("TEST_PORT", "9090")
+	_ = os.Setenv("TEST_DEBUG", "true")
+	defer func() { _ = os.Unsetenv("TEST_HOST") }()
+	defer func() { _ = os.Unsetenv("TEST_PORT") }()
+	defer func() { _ = os.Unsetenv("TEST_DEBUG") }()
+
+	fs := New("myapp")
+	fs.SetEnvPrefix("TEST")
+
+	host := fs.String("host", "localhost", "Host address")
+	port := fs.Int("port", 8080, "Port number")
+	debug := fs.Bool("debug", false, "Debug mode")
+
+	err := fs.Parse([]string{})
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	verifyBasicEnvValues(t, host, port, debug)
+}
+
+// testCommandLineOverridesEnv tests that command line overrides environment variables
+func testCommandLineOverridesEnv(t *testing.T) {
+	// Set environment variables
+	_ = os.Setenv("TEST_HOST", "env.example.com")
+	_ = os.Setenv("TEST_PORT", "9090")
+	defer func() { _ = os.Unsetenv("TEST_HOST") }()
+	defer func() { _ = os.Unsetenv("TEST_PORT") }()
+
+	fs := New("myapp")
+	fs.SetEnvPrefix("TEST")
+
+	host := fs.String("host", "localhost", "Host address")
+	port := fs.Int("port", 8080, "Port number")
+
+	// Command line should override environment
+	err := fs.Parse([]string{"--host", "cmd.example.com", "--port", "3000"})
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	verifyCommandLineOverrideValues(t, host, port)
+}
+
+// testCustomEnvVarNames tests custom environment variable names
+func testCustomEnvVarNames(t *testing.T) {
+	// Set custom environment variable
+	_ = os.Setenv("CUSTOM_SERVER_HOST", "custom.example.com")
+	defer func() { _ = os.Unsetenv("CUSTOM_SERVER_HOST") }()
+
+	fs := New("myapp")
+	fs.EnableEnvLookup()
+
+	host := fs.String("host", "localhost", "Host address")
+
+	// Set custom environment variable name
+	err := fs.SetEnvVar("host", "CUSTOM_SERVER_HOST")
+	if err != nil {
+		t.Fatalf("SetEnvVar failed: %v", err)
+	}
+
+	err = fs.Parse([]string{})
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	verifyCustomEnvValue(t, host)
+}
+
+// testDefaultNaming tests default environment variable naming
+func testDefaultNaming(t *testing.T) {
+	// Set environment variable with default naming
+	_ = os.Setenv("DB_HOST", "db.example.com")
+	defer func() { _ = os.Unsetenv("DB_HOST") }()
+
+	fs := New("myapp")
+	fs.EnableEnvLookup()
+
+	dbHost := fs.String("db-host", "localhost", "Database host")
+
+	err := fs.Parse([]string{})
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	verifyDefaultNamingValue(t, dbHost)
+}
+
+// verifyBasicEnvValues checks basic environment variable values
+func verifyBasicEnvValues(t *testing.T, host *string, port *int, debug *bool) {
+	if *host != "env.example.com" {
+		t.Errorf("Expected host from env 'env.example.com', got '%s'", *host)
+	}
+	if *port != 9090 {
+		t.Errorf("Expected port from env 9090, got %d", *port)
+	}
+	if *debug != true {
+		t.Errorf("Expected debug from env true, got %v", *debug)
+	}
+}
+
+// verifyCommandLineOverrideValues checks command line override values
+func verifyCommandLineOverrideValues(t *testing.T, host *string, port *int) {
+	if *host != "cmd.example.com" {
+		t.Errorf("Expected host from command line 'cmd.example.com', got '%s'", *host)
+	}
+	if *port != 3000 {
+		t.Errorf("Expected port from command line 3000, got %d", *port)
+	}
+}
+
+// verifyCustomEnvValue checks custom environment variable value
+func verifyCustomEnvValue(t *testing.T, host *string) {
+	if *host != "custom.example.com" {
+		t.Errorf("Expected host from custom env 'custom.example.com', got '%s'", *host)
+	}
+}
+
+// verifyDefaultNamingValue checks default naming environment variable value
+func verifyDefaultNamingValue(t *testing.T, dbHost *string) {
+	if *dbHost != "db.example.com" {
+		t.Errorf("Expected db-host from env 'db.example.com', got '%s'", *dbHost)
+	}
 }
 
 // Test PrintUsage function
@@ -1320,7 +1333,10 @@ func TestFlagValidate(t *testing.T) {
 	}
 
 	flag.SetValidator(func(val interface{}) error {
-		portVal := val.(int)
+		portVal, ok := val.(int)
+		if !ok {
+			return fmt.Errorf("expected int, got %T", val)
+		}
 		if portVal < 1024 {
 			return fmt.Errorf("port must be >= 1024")
 		}
@@ -1371,65 +1387,104 @@ func TestLoadEnvironmentVariablesEdgeCases(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.envVar, func(t *testing.T) {
-			// Set environment variable
-			os.Setenv(tc.envVar, tc.envValue)
-			defer os.Unsetenv(tc.envVar)
-
-			fs := New("test")
-			fs.EnableEnvLookup()
-
-			// Register appropriate flag type
-			switch tc.flagType {
-			case "string":
-				flag := fs.String(tc.flagName, "", "Test flag")
-				fs.SetEnvVar(tc.flagName, tc.envVar)
-				fs.Parse([]string{})
-				if *flag != tc.expected {
-					t.Errorf("Expected %v, got %v", tc.expected, *flag)
-				}
-			case "int":
-				flag := fs.Int(tc.flagName, 0, "Test flag")
-				fs.SetEnvVar(tc.flagName, tc.envVar)
-				fs.Parse([]string{})
-				if *flag != tc.expected {
-					t.Errorf("Expected %v, got %v", tc.expected, *flag)
-				}
-			case "bool":
-				flag := fs.Bool(tc.flagName, false, "Test flag")
-				fs.SetEnvVar(tc.flagName, tc.envVar)
-				fs.Parse([]string{})
-				if *flag != tc.expected {
-					t.Errorf("Expected %v, got %v", tc.expected, *flag)
-				}
-			case "duration":
-				flag := fs.Duration(tc.flagName, 0, "Test flag")
-				fs.SetEnvVar(tc.flagName, tc.envVar)
-				fs.Parse([]string{})
-				if *flag != tc.expected {
-					t.Errorf("Expected %v, got %v", tc.expected, *flag)
-				}
-			case "float64":
-				flag := fs.Float64(tc.flagName, 0, "Test flag")
-				fs.SetEnvVar(tc.flagName, tc.envVar)
-				fs.Parse([]string{})
-				if *flag != tc.expected {
-					t.Errorf("Expected %v, got %v", tc.expected, *flag)
-				}
-			case "stringSlice":
-				flag := fs.StringSlice(tc.flagName, nil, "Test flag")
-				fs.SetEnvVar(tc.flagName, tc.envVar)
-				fs.Parse([]string{})
-				expected := tc.expected.([]string)
-				if len(*flag) != len(expected) {
-					t.Errorf("Expected slice length %d, got %d", len(expected), len(*flag))
-				}
-				for i, v := range expected {
-					if (*flag)[i] != v {
-						t.Errorf("Expected slice element %d to be %s, got %s", i, v, (*flag)[i])
-					}
-				}
-			}
+			testEnvVarEdgeCase(t, tc.envVar, tc.envValue, tc.flagName, tc.expected, tc.flagType)
 		})
+	}
+}
+
+// testEnvVarEdgeCase tests a single environment variable edge case
+func testEnvVarEdgeCase(t *testing.T, envVar, envValue, flagName string, expected interface{}, flagType string) {
+	// Set environment variable
+	_ = os.Setenv(envVar, envValue)
+	defer func() { _ = os.Unsetenv(envVar) }()
+
+	fs := New("test")
+	fs.EnableEnvLookup()
+
+	// Register appropriate flag type and test
+	switch flagType {
+	case "string":
+		testStringEnvVar(t, fs, flagName, envVar, expected)
+	case "int":
+		testIntEnvVar(t, fs, flagName, envVar, expected)
+	case "bool":
+		testBoolEnvVar(t, fs, flagName, envVar, expected)
+	case "duration":
+		testDurationEnvVar(t, fs, flagName, envVar, expected)
+	case "float64":
+		testFloat64EnvVar(t, fs, flagName, envVar, expected)
+	case "stringSlice":
+		testStringSliceEnvVar(t, fs, flagName, envVar, expected)
+	}
+}
+
+// testStringEnvVar tests string environment variable handling
+func testStringEnvVar(t *testing.T, fs *FlagSet, flagName, envVar string, expected interface{}) {
+	flag := fs.String(flagName, "", "Test flag")
+	_ = fs.SetEnvVar(flagName, envVar)
+	_ = fs.Parse([]string{})
+	if *flag != expected {
+		t.Errorf("Expected %v, got %v", expected, *flag)
+	}
+}
+
+// testIntEnvVar tests int environment variable handling
+func testIntEnvVar(t *testing.T, fs *FlagSet, flagName, envVar string, expected interface{}) {
+	flag := fs.Int(flagName, 0, "Test flag")
+	_ = fs.SetEnvVar(flagName, envVar)
+	_ = fs.Parse([]string{})
+	if *flag != expected {
+		t.Errorf("Expected %v, got %v", expected, *flag)
+	}
+}
+
+// testBoolEnvVar tests bool environment variable handling
+func testBoolEnvVar(t *testing.T, fs *FlagSet, flagName, envVar string, expected interface{}) {
+	flag := fs.Bool(flagName, false, "Test flag")
+	_ = fs.SetEnvVar(flagName, envVar)
+	_ = fs.Parse([]string{})
+	if *flag != expected {
+		t.Errorf("Expected %v, got %v", expected, *flag)
+	}
+}
+
+// testDurationEnvVar tests duration environment variable handling
+func testDurationEnvVar(t *testing.T, fs *FlagSet, flagName, envVar string, expected interface{}) {
+	flag := fs.Duration(flagName, 0, "Test flag")
+	_ = fs.SetEnvVar(flagName, envVar)
+	_ = fs.Parse([]string{})
+	if *flag != expected {
+		t.Errorf("Expected %v, got %v", expected, *flag)
+	}
+}
+
+// testFloat64EnvVar tests float64 environment variable handling
+func testFloat64EnvVar(t *testing.T, fs *FlagSet, flagName, envVar string, expected interface{}) {
+	flag := fs.Float64(flagName, 0, "Test flag")
+	_ = fs.SetEnvVar(flagName, envVar)
+	_ = fs.Parse([]string{})
+	if *flag != expected {
+		t.Errorf("Expected %v, got %v", expected, *flag)
+	}
+}
+
+// testStringSliceEnvVar tests string slice environment variable handling
+func testStringSliceEnvVar(t *testing.T, fs *FlagSet, flagName, envVar string, expected interface{}) {
+	flag := fs.StringSlice(flagName, nil, "Test flag")
+	_ = fs.SetEnvVar(flagName, envVar)
+	_ = fs.Parse([]string{})
+	expectedSlice, ok := expected.([]string)
+	if !ok {
+		t.Errorf("Expected []string, got %T", expected)
+		return
+	}
+	if len(*flag) != len(expectedSlice) {
+		t.Errorf("Expected slice length %d, got %d", len(expectedSlice), len(*flag))
+	}
+	for i, v := range expectedSlice {
+		if (*flag)[i] != v {
+			t.Errorf("Expected slice element %d to be %s, got %s", i, v, (*flag)[i])
+		}
 	}
 }
 
@@ -1489,7 +1544,7 @@ func TestAdditionalCoverage(t *testing.T) {
 
 	// Test ValidateAll with validation errors
 	port := fs.Int("port", 8080, "Port number")
-	fs.SetValidator("port", func(val interface{}) error {
+	_ = fs.SetValidator("port", func(val interface{}) error {
 		return fmt.Errorf("validation error")
 	})
 
@@ -1522,7 +1577,7 @@ func TestAdditionalCoverage(t *testing.T) {
 	}
 
 	// Test ValidateAllConstraints with errors
-	fs.SetRequired("missing")
+	_ = fs.SetRequired("missing")
 	err = fs.ValidateAllConstraints()
 	if err == nil {
 		t.Error("ValidateAllConstraints should fail for missing required flag")
@@ -1685,12 +1740,16 @@ func TestEnvVarMoreCases(t *testing.T) {
 
 // Test final edge cases for 95% coverage
 func TestFinalEdgeCases(t *testing.T) {
-	fs := New("test")
+	testShortFlagFunctionality(t)
+	testFlagWithEmptyShortKey(t)
+	testAllGetterEdgeCases(t)
+}
 
-	// Test short flag functionality
+// testShortFlagFunctionality tests short flag parsing
+func testShortFlagFunctionality(t *testing.T) {
+	fs := New("test")
 	verbose := fs.BoolVar("verbose", "v", false, "Verbose mode")
 
-	// Test short flag parsing
 	err := fs.Parse([]string{"-v"})
 	if err != nil {
 		t.Fatalf("Parse should succeed with short flag: %v", err)
@@ -1699,10 +1758,14 @@ func TestFinalEdgeCases(t *testing.T) {
 	if !*verbose {
 		t.Error("Short flag should set verbose to true")
 	}
+}
 
-	// Test flag with empty short key
+// testFlagWithEmptyShortKey tests flags with empty short keys
+func testFlagWithEmptyShortKey(t *testing.T) {
+	fs := New("test")
 	name := fs.StringVar("name", "", "default", "Name")
-	err = fs.Parse([]string{"--name", "test"})
+
+	err := fs.Parse([]string{"--name", "test"})
 	if err != nil {
 		t.Fatalf("Parse should succeed: %v", err)
 	}
@@ -1710,8 +1773,13 @@ func TestFinalEdgeCases(t *testing.T) {
 	if *name != "test" {
 		t.Errorf("Expected name=test, got %s", *name)
 	}
+}
 
-	// Test all remaining getter edge cases
+// testAllGetterEdgeCases tests all getter methods with existing flags
+func testAllGetterEdgeCases(t *testing.T) {
+	fs := New("test")
+
+	// Create flags with default values
 	fs.String("test-string", "default", "Test string")
 	fs.Int("test-int", 123, "Test int")
 	fs.Bool("test-bool", true, "Test bool")
@@ -1719,7 +1787,12 @@ func TestFinalEdgeCases(t *testing.T) {
 	fs.Float64("test-float", 2.5, "Test float")
 	fs.StringSlice("test-slice", []string{"a", "b"}, "Test slice")
 
-	// Test getters with existing flags
+	// Test all getters
+	verifyAllGetterValues(t, fs)
+}
+
+// verifyAllGetterValues checks all getter method return values
+func verifyAllGetterValues(t *testing.T, fs *FlagSet) {
 	if fs.GetString("test-string") != "default" {
 		t.Error("GetString should return default value")
 	}
@@ -1735,8 +1808,80 @@ func TestFinalEdgeCases(t *testing.T) {
 	if fs.GetFloat64("test-float") != 2.5 {
 		t.Error("GetFloat64 should return default value")
 	}
+
 	slice := fs.GetStringSlice("test-slice")
 	if len(slice) != 2 || slice[0] != "a" || slice[1] != "b" {
 		t.Error("GetStringSlice should return default value")
+	}
+}
+
+// Helper functions for test complexity reduction
+
+// createTempConfigFile creates a temporary config file with the given content
+func createTempConfigFile(t *testing.T, content, pattern string) string {
+	tmpfile, err := os.CreateTemp("", pattern)
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+
+	if _, err := tmpfile.Write([]byte(content)); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+		_ = os.Remove(tmpfile.Name())
+	}
+	_ = tmpfile.Close()
+	return tmpfile.Name()
+}
+
+// setupBasicFlags creates a FlagSet with common test flags
+func setupBasicFlags(name string) (*FlagSet, *string, *int, *bool, *float64, *[]string) {
+	fs := New(name)
+	host := fs.String("host", "default", "Host flag")
+	port := fs.Int("port", 8080, "Port flag")
+	debug := fs.Bool("debug", false, "Debug flag")
+	rate := fs.Float64("rate", 1.0, "Rate flag")
+	tags := fs.StringSlice("tags", []string{}, "Tags flag")
+	return fs, host, port, debug, rate, tags
+}
+
+// verifyConfigValues checks that config values were loaded correctly
+func verifyConfigValues(t *testing.T, host *string, port *int, debug *bool, rate *float64, tags *[]string) {
+	if *host != "config-host" {
+		t.Errorf("Expected host from config 'config-host', got '%s'", *host)
+	}
+	if *port != 9000 {
+		t.Errorf("Expected port from config 9000, got %d", *port)
+	}
+	if !*debug {
+		t.Errorf("Expected debug from config true, got %t", *debug)
+	}
+	if *rate != 2.5 {
+		t.Errorf("Expected rate from config 2.5, got %f", *rate)
+	}
+	if len(*tags) != 2 || (*tags)[0] != "config" || (*tags)[1] != "test" {
+		t.Errorf("Expected tags from config ['config', 'test'], got %v", *tags)
+	}
+}
+
+// nameValidator returns a validator function for name strings
+func nameValidator() func(interface{}) error {
+	return func(v interface{}) error {
+		if str, ok := v.(string); ok {
+			if len(str) < 2 {
+				return fmt.Errorf("name must be at least 2 characters")
+			}
+		}
+		return nil
+	}
+}
+
+// portValidator returns a validator function for port numbers
+func portValidator() func(interface{}) error {
+	return func(v interface{}) error {
+		if intVal, ok := v.(int); ok {
+			if intVal < 1 || intVal > 65535 {
+				return fmt.Errorf("port must be between 1 and 65535")
+			}
+		}
+		return nil
 	}
 }

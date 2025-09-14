@@ -2,9 +2,10 @@
 ### an AGILira library
 
 [![CI/CD Pipeline](https://github.com/agilira/flash-flags/actions/workflows/ci.yml/badge.svg)](https://github.com/agilira/flash-flags/actions/workflows/ci.yml)
-[![Security](https://img.shields.io/badge/security-gosec-brightgreen.svg)](https://github.com/securego/gosec)
-[![Go Report Card](https://goreportcard.com/badge/github.com/agilira/flash-flags)](https://goreportcard.com/report/github.com/agilira/flash-flags)
+[![Security](https://img.shields.io/badge/security-gosec-brightgreen.svg)](https://github.com/agilira/flash-flags/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/agilira/flash-flags?v=2)](https://goreportcard.com/report/github.com/agilira/flash-flags)
 [![Coverage](https://codecov.io/gh/agilira/flash-flags/branch/main/graph/badge.svg)](https://codecov.io/gh/agilira/flash-flags)
+[![GoDoc](https://godoc.org/github.com/agilira/flash-flags?status.svg)](https://godoc.org/github.com/agilira/flash-flags)
 
 FlashFlags is an ultra-fast, zero-dependency, lock-free command-line flag parsing library for Go. Originally built for Argus, it provides great performance while maintaining simplicity and ease of use.
 
@@ -86,17 +87,17 @@ FlashFlags offers a clean, feature-rich API with solid performance and zero exte
 
 FlashFlags is designed for maximum performance, offering practically identical performance to Go's standard library with a lot of additional features:
 
-| Operation | Time | Memory | Allocations |
-|-----------|------|--------|-------------|
-| Parse (5 flags) | 1,511 ns | 1,520 B | 25 allocs |
-| Get String | 14.77 ns | 0 B | 0 allocs |
-| Get Int | 7.54 ns | 0 B | 0 allocs |
-| Get Bool | 8.17 ns | 0 B | 0 allocs |
-| Get Duration | 8.74 ns | 0 B | 0 allocs |
-
-**FlashFlags vs Go standard flag**: practically identical performance (~1.5μs) with zero significant additional overhead.
-
-*Benchmarks run on AMD Ryzen 5 7520U, Go 1.23*
+```
+AMD Ryzen 5 7520U with Radeon Graphics
+BenchmarkGetters/GetString 121M      8.58 ns/op        0 B/op    0 allocs/op
+BenchmarkGetters/GetInt    150M      7.56 ns/op        0 B/op    0 allocs/op
+BenchmarkGetters/GetBool   147M      8.34 ns/op        0 B/op    0 allocs/op
+BenchmarkGetters/GetDuration 141M    8.13 ns/op        0 B/op    0 allocs/op
+```
+**Reproduce benchmarks**:
+```bash
+go test -bench=. -benchmem
+```
 
 ### Key Advantages
 
@@ -105,10 +106,8 @@ FlashFlags is designed for maximum performance, offering practically identical p
 - **Memory Efficient**: Reasonable allocation profile for complex parsing
 - **Thread Safe**: Lock-free concurrent operations
 
-## Documentation
+## Demo
 
-- **[API Reference](docs/API.md)** - Complete API documentation
-- **[Usage Guide](docs/USAGE.md)** - Comprehensive usage examples and patterns
 - **[Demo Examples](demo/)** - Real-world examples and integrations
 
 ## Supported Flag Types

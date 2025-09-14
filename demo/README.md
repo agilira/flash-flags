@@ -93,3 +93,7 @@ These demos show patterns you can use in your own applications:
 - **Dependencies** between flags
 - **Configuration hierarchy** (CLI > env vars > config files > defaults)
 - **Error handling** and user-friendly messages
+
+---
+
+flash-flags • an AGILira library

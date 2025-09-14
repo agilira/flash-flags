@@ -1,3 +1,9 @@
+// flash-flags/demo/help: Ultra-fast command-line flag parsing for Go - help flags example
+//
+// Copyright (c) 2025 AGILira - A. Giordano
+// Series: an AGILira library
+// SPDX-License-Identifier: MPL-2.0
+
 package main
 
 import (
@@ -40,32 +46,83 @@ func main() {
 	verbose := fs.BoolVar("verbose", "v", false, "Enable verbose logging")
 
 	// Set groups for better help organization
-	fs.SetGroup("host", "Server Options")
-	fs.SetGroup("port", "Server Options")
-	fs.SetGroup("ssl", "Server Options")
-	fs.SetGroup("cert", "SSL Options")
-	fs.SetGroup("key", "SSL Options")
+	if err := fs.SetGroup("host", "Server Options"); err != nil {
+		fmt.Printf("Error setting group for host: %v\n", err)
+		return
+	}
+	if err := fs.SetGroup("port", "Server Options"); err != nil {
+		fmt.Printf("Error setting group for port: %v\n", err)
+		return
+	}
+	if err := fs.SetGroup("ssl", "Server Options"); err != nil {
+		fmt.Printf("Error setting group for ssl: %v\n", err)
+		return
+	}
+	if err := fs.SetGroup("cert", "SSL Options"); err != nil {
+		fmt.Printf("Error setting group for cert: %v\n", err)
+		return
+	}
+	if err := fs.SetGroup("key", "SSL Options"); err != nil {
+		fmt.Printf("Error setting group for key: %v\n", err)
+		return
+	}
 
-	fs.SetGroup("db-host", "Database Options")
-	fs.SetGroup("db-port", "Database Options")
-	fs.SetGroup("db-name", "Database Options")
-	fs.SetGroup("db-user", "Database Options")
-	fs.SetGroup("db-password", "Database Options")
+	if err := fs.SetGroup("db-host", "Database Options"); err != nil {
+		fmt.Printf("Error setting group for db-host: %v\n", err)
+		return
+	}
+	if err := fs.SetGroup("db-port", "Database Options"); err != nil {
+		fmt.Printf("Error setting group for db-port: %v\n", err)
+		return
+	}
+	if err := fs.SetGroup("db-name", "Database Options"); err != nil {
+		fmt.Printf("Error setting group for db-name: %v\n", err)
+		return
+	}
+	if err := fs.SetGroup("db-user", "Database Options"); err != nil {
+		fmt.Printf("Error setting group for db-user: %v\n", err)
+		return
+	}
+	if err := fs.SetGroup("db-password", "Database Options"); err != nil {
+		fmt.Printf("Error setting group for db-password: %v\n", err)
+		return
+	}
 
-	fs.SetGroup("log-level", "Logging Options")
-	fs.SetGroup("log-file", "Logging Options")
-	fs.SetGroup("verbose", "Logging Options")
+	if err := fs.SetGroup("log-level", "Logging Options"); err != nil {
+		fmt.Printf("Error setting group for log-level: %v\n", err)
+		return
+	}
+	if err := fs.SetGroup("log-file", "Logging Options"); err != nil {
+		fmt.Printf("Error setting group for log-file: %v\n", err)
+		return
+	}
+	if err := fs.SetGroup("verbose", "Logging Options"); err != nil {
+		fmt.Printf("Error setting group for verbose: %v\n", err)
+		return
+	}
 
 	// Set required flags
-	fs.SetRequired("db-user")
-	fs.SetRequired("db-password")
+	if err := fs.SetRequired("db-user"); err != nil {
+		fmt.Printf("Error setting db-user as required: %v\n", err)
+		return
+	}
+	if err := fs.SetRequired("db-password"); err != nil {
+		fmt.Printf("Error setting db-password as required: %v\n", err)
+		return
+	}
 
 	// Set dependencies
-	fs.SetDependencies("cert", "ssl") // cert requires ssl
-	fs.SetDependencies("key", "ssl")  // key requires ssl
+	if err := fs.SetDependencies("cert", "ssl"); err != nil { // cert requires ssl
+		fmt.Printf("Error setting dependencies for cert: %v\n", err)
+		return
+	}
+	if err := fs.SetDependencies("key", "ssl"); err != nil { // key requires ssl
+		fmt.Printf("Error setting dependencies for key: %v\n", err)
+		return
+	}
 
 	// Set validation for log level
-	fs.SetValidator("log-level", func(val interface{}) error {
+	if err := fs.SetValidator("log-level", func(val interface{}) error {
 		level := val.(string)
 		validLevels := []string{"debug", "info", "warn", "error"}
 		for _, valid := range validLevels {
@@ -74,16 +131,22 @@ func main() {
 			}
 		}
 		return fmt.Errorf("invalid log level '%s', must be one of: debug, info, warn, error", level)
-	})
+	}); err != nil {
+		fmt.Printf("Error setting validator for log-level: %v\n", err)
+		return
+	}
 
 	// Set validation for port range
-	fs.SetValidator("port", func(val interface{}) error {
+	if err := fs.SetValidator("port", func(val interface{}) error {
 		port := val.(int)
 		if port < 1 || port > 65535 {
 			return fmt.Errorf("port must be between 1 and 65535, got %d", port)
 		}
 		return nil
-	})
+	}); err != nil {
+		fmt.Printf("Error setting validator for port: %v\n", err)
+		return
+	}
 
 	fmt.Println("=== Help System Demo ===")
 

@@ -1,6 +1,6 @@
 // flash-flags/demo/env: Ultra-fast command-line flag parsing for Go - env example
 //
-// Copyright (c) 2025 AGILira
+// Copyright (c) 2025 AGILira - A. Giordano
 // Series: an AGILira library
 // SPDX-License-Identifier: MPL-2.0
 
@@ -36,9 +36,18 @@ func main() {
 	fmt.Println("  export ENVDEMO_DEBUG=true")
 
 	// Set environment variables for demo
-	os.Setenv("ENVDEMO_HOST", "env.example.com")
-	os.Setenv("ENVDEMO_PORT", "9090")
-	os.Setenv("ENVDEMO_DEBUG", "true")
+	if err := os.Setenv("ENVDEMO_HOST", "env.example.com"); err != nil {
+		fmt.Printf("Error setting ENVDEMO_HOST: %v\n", err)
+		return
+	}
+	if err := os.Setenv("ENVDEMO_PORT", "9090"); err != nil {
+		fmt.Printf("Error setting ENVDEMO_PORT: %v\n", err)
+		return
+	}
+	if err := os.Setenv("ENVDEMO_DEBUG", "true"); err != nil {
+		fmt.Printf("Error setting ENVDEMO_DEBUG: %v\n", err)
+		return
+	}
 
 	// Enable environment lookup with prefix
 	fs.SetEnvPrefix("ENVDEMO")
@@ -84,12 +93,18 @@ func main() {
 	database := fs2.String("database-url", "localhost:5432", "Database URL")
 
 	// Set custom environment variable name
-	fs2.SetEnvVar("database-url", "DATABASE_CONNECTION_STRING")
+	if err := fs2.SetEnvVar("database-url", "DATABASE_CONNECTION_STRING"); err != nil {
+		fmt.Printf("Error setting custom env var: %v\n", err)
+		return
+	}
 
 	fmt.Println("Setting custom environment variable:")
 	fmt.Println("  export DATABASE_CONNECTION_STRING=postgres://user:pass@db.example.com:5432/mydb")
 
-	os.Setenv("DATABASE_CONNECTION_STRING", "postgres://user:pass@db.example.com:5432/mydb")
+	if err := os.Setenv("DATABASE_CONNECTION_STRING", "postgres://user:pass@db.example.com:5432/mydb"); err != nil {
+		fmt.Printf("Error setting DATABASE_CONNECTION_STRING: %v\n", err)
+		return
+	}
 
 	err = fs2.Parse([]string{})
 	if err != nil {
@@ -114,8 +129,14 @@ func main() {
 	fmt.Println("  export DB_HOST=db.example.com")
 	fmt.Println("  export LOG_LEVEL=debug")
 
-	os.Setenv("DB_HOST", "db.example.com")
-	os.Setenv("LOG_LEVEL", "debug")
+	if err := os.Setenv("DB_HOST", "db.example.com"); err != nil {
+		fmt.Printf("Error setting DB_HOST: %v\n", err)
+		return
+	}
+	if err := os.Setenv("LOG_LEVEL", "debug"); err != nil {
+		fmt.Printf("Error setting LOG_LEVEL: %v\n", err)
+		return
+	}
 
 	err = fs3.Parse([]string{})
 	if err != nil {

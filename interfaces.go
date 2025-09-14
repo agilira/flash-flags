@@ -1,6 +1,6 @@
 // flash-flags.go: flash-flags interfaces
 //
-// Copyright (c) 2025 AGILira
+// Copyright (c) 2025 AGILira - A. Giordano
 // Series: an AGILira library
 // SPDX-License-Identifier: MPL-2.0
 
