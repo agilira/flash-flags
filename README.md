@@ -7,7 +7,9 @@
 [![Coverage](https://codecov.io/gh/agilira/flash-flags/branch/main/graph/badge.svg)](https://codecov.io/gh/agilira/flash-flags)
 [![GoDoc](https://godoc.org/github.com/agilira/flash-flags?status.svg)](https://godoc.org/github.com/agilira/flash-flags)
 
-FlashFlags is an ultra-fast, zero-dependency, lock-free command-line flag parsing library for Go. Originally built for Argus, it provides great performance while maintaining simplicity and ease of use.
+**[Features](#features) • [Quick Start](#quick-start) •  [Performance](#performance) • [Demo](#demo) • [Flag Types](#supported-flag-types) • [Configuration](#configuration-priority) • [Examples](#real-world-example)**
+
+FlashFlags is an ultra-fast, zero-dependency, lock-free command-line flag parsing library for Go. Originally built for [Argus](https://github.com/agilira/argus), it provides great performance while maintaining simplicity and ease of use. FlashFlags serves as the core parsing engine for our CLI framework [Orpheus](https://github.com/agilira/orpheus).
 
 ## Features
 
@@ -22,7 +24,34 @@ FlashFlags is an ultra-fast, zero-dependency, lock-free command-line flag parsin
 - **Type Safety**: Strong typing for all flag types
 - **Short Flags**: Single-character flag support
 
+## Compatibility and Support
+
+FlashFlags is designed for Go 1.23+ environments and follows Long-Term Support guidelines to ensure consistent performance across production deployments.
+
+## Performance
+
+FlashFlags is designed for maximum performance, offering practically identical performance to Go's standard library with a lot of additional features:
+
+```
+AMD Ryzen 5 7520U with Radeon Graphics
+BenchmarkGetters/GetString 121M      8.58 ns/op        0 B/op    0 allocs/op
+BenchmarkGetters/GetInt    150M      7.56 ns/op        0 B/op    0 allocs/op
+BenchmarkGetters/GetBool   147M      8.34 ns/op        0 B/op    0 allocs/op
+BenchmarkGetters/GetDuration 141M    8.13 ns/op        0 B/op    0 allocs/op
+```
+**Reproduce benchmarks**:
+```bash
+go test -bench=. -benchmem
+```
+
 ## Quick Start
+
+### Installation
+
+```bash
+go get github.com/agilira/flash-flags
+```
+### Basic Usage
 
 ```go
 package main
@@ -73,31 +102,9 @@ func main() {
 ./myapp --help
 ```
 
-## Installation
-
-```bash
-go get github.com/agilira/flash-flags
-```
-
 ## Why FlashFlags?
 
 FlashFlags offers a clean, feature-rich API with solid performance and zero external dependencies. Perfect for applications that need advanced flag features without the complexity of large CLI frameworks.
-
-## Performance
-
-FlashFlags is designed for maximum performance, offering practically identical performance to Go's standard library with a lot of additional features:
-
-```
-AMD Ryzen 5 7520U with Radeon Graphics
-BenchmarkGetters/GetString 121M      8.58 ns/op        0 B/op    0 allocs/op
-BenchmarkGetters/GetInt    150M      7.56 ns/op        0 B/op    0 allocs/op
-BenchmarkGetters/GetBool   147M      8.34 ns/op        0 B/op    0 allocs/op
-BenchmarkGetters/GetDuration 141M    8.13 ns/op        0 B/op    0 allocs/op
-```
-**Reproduce benchmarks**:
-```bash
-go test -bench=. -benchmem
-```
 
 ### Key Advantages
 
