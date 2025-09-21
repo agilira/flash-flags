@@ -103,6 +103,17 @@ func (f *Flag) Changed() bool { return f.changed }
 //	fmt.Printf("Flag usage: %s\n", flag.Usage()) // Output: Flag usage: Server port number
 func (f *Flag) Usage() string { return f.usage }
 
+// ShortKey returns the short flag key (single character for -f syntax).
+// Returns empty string if no short key is defined for this flag.
+//
+// Example:
+//
+//	flag := fs.Lookup("port")
+//	if flag.ShortKey() != "" {
+//		fmt.Printf("Short key: -%s\n", flag.ShortKey()) // Output: Short key: -p
+//	}
+func (f *Flag) ShortKey() string { return f.shortKey }
+
 // SetValidator sets a validation function for the flag.
 // The validator will be called whenever the flag value is set or changed.
 //

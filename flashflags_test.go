@@ -1885,3 +1885,59 @@ func portValidator() func(interface{}) error {
 		return nil
 	}
 }
+
+// TestShortKey tests the new ShortKey() method for flag metadata access
+func TestShortKey(t *testing.T) {
+	fs := New("test")
+	
+	// Create flag with short key
+	fs.StringVar("host", "h", "localhost", "Server host")
+	fs.IntVar("port", "p", 8080, "Server port")
+	fs.BoolVar("verbose", "v", false, "Verbose output")
+	
+	// Create flag without short key
+	fs.String("config", "config.json", "Configuration file")
+	
+	t.Run("flags with short keys", func(t *testing.T) {
+		hostFlag := fs.Lookup("host")
+		if hostFlag == nil {
+			t.Fatal("Expected to find host flag")
+		}
+		if hostFlag.ShortKey() != "h" {
+			t.Errorf("Expected short key 'h', got '%s'", hostFlag.ShortKey())
+		}
+		
+		portFlag := fs.Lookup("port")
+		if portFlag == nil {
+			t.Fatal("Expected to find port flag")
+		}
+		if portFlag.ShortKey() != "p" {
+			t.Errorf("Expected short key 'p', got '%s'", portFlag.ShortKey())
+		}
+		
+		verboseFlag := fs.Lookup("verbose")
+		if verboseFlag == nil {
+			t.Fatal("Expected to find verbose flag")
+		}
+		if verboseFlag.ShortKey() != "v" {
+			t.Errorf("Expected short key 'v', got '%s'", verboseFlag.ShortKey())
+		}
+	})
+	
+	t.Run("flag without short key", func(t *testing.T) {
+		configFlag := fs.Lookup("config")
+		if configFlag == nil {
+			t.Fatal("Expected to find config flag")
+		}
+		if configFlag.ShortKey() != "" {
+			t.Errorf("Expected empty short key, got '%s'", configFlag.ShortKey())
+		}
+	})
+	
+	t.Run("nonexistent flag", func(t *testing.T) {
+		flag := fs.Lookup("nonexistent")
+		if flag != nil {
+			t.Error("Expected nil for nonexistent flag")
+		}
+	})
+}

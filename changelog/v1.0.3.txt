@@ -1,0 +1,84 @@
+```plaintext
+FlashFlags v1.0.3
+Released: September 21, 2025
+
+API Enhancement for Integration Libraries
+- Added public ShortKey() method to Flag struct for external library integration
+- Enhanced metadata access for CLI framework developers
+- Improved type safety and dynamic flag detection capabilities
+
+NEW FEATURES
+
+Public API Enhancement
+- Flag.ShortKey() method: Access short flag keys programmatically
+- Returns empty string for flags without short keys
+- Enables dynamic boolean flag detection in CLI frameworks
+- Full backward compatibility with existing code
+
+TECHNICAL IMPROVEMENTS
+
+Metadata Access
+- Enhanced Flag struct with public shortKey accessor
+- Improved integration capabilities for external CLI frameworks
+- Better support for dynamic flag parsing and validation
+- Professional API design following Go best practices
+
+Testing Coverage
+- Added comprehensive TestShortKey() test suite
+- Validates flags with short keys (h, p, v)
+- Tests flags without short keys
+- Handles nonexistent flag scenarios
+- Maintains 100% test coverage for new functionality
+
+INTEGRATION BENEFITS
+
+CLI Framework Support
+- Enables Orpheus CLI framework to dynamically detect boolean short flags
+- Improves flag parsing accuracy and user experience
+- Allows custom global boolean flags to be properly detected
+- Eliminates hardcoded flag type assumptions
+
+Developer Experience
+- Clear and consistent API for flag metadata access
+- Professional documentation with usage examples
+- Enhanced debugging capabilities for flag-related issues
+- Better tooling support for CLI application development
+
+BACKWARD COMPATIBILITY
+
+API Stability
+- Zero breaking changes to existing functionality
+- All existing methods and behavior preserved
+- Smooth upgrade path for all v1.0.x users
+- Maintains performance characteristics
+
+Code Quality
+- Follows Go naming conventions and best practices
+- Comprehensive inline documentation
+- Professional error handling patterns
+- Enhanced maintainability and readability
+
+DOCUMENTATION
+
+Method Documentation
+- Complete GoDoc for ShortKey() method with examples
+- Clear usage patterns and return value specifications
+- Professional coding standards maintained
+- Enhanced API reference documentation
+
+Usage Examples
+```go
+flag := fs.Lookup("port")
+if flag.ShortKey() != "" {
+    fmt.Printf("Short key: -%s\n", flag.ShortKey()) // Output: Short key: -p
+}
+```
+
+COMPATIBILITY AND SUPPORT
+
+- Go 1.23+ compatibility maintained
+- Zero external dependencies preserved
+- Enhanced integration capabilities for CLI frameworks
+- Production-ready with improved metadata access
+
+```
