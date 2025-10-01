@@ -194,6 +194,301 @@ func TestShortFlags(t *testing.T) {
 	})
 }
 
+// TestShortFlagEquals tests the new -f=value syntax
+func TestShortFlagEquals(t *testing.T) {
+	t.Run("string short flag with equals", func(t *testing.T) {
+		fs := New("test")
+		name := fs.StringVar("name", "n", "", "Your name")
+
+		args := []string{"-n=John"}
+		err := fs.Parse(args)
+		if err != nil {
+			t.Fatalf("Parse failed: %v", err)
+		}
+
+		if *name != "John" {
+			t.Errorf("Expected 'John', got '%s'", *name)
+		}
+	})
+
+	t.Run("int short flag with equals", func(t *testing.T) {
+		fs := New("test")
+		port := fs.IntVar("port", "p", 0, "Port number")
+
+		args := []string{"-p=8080"}
+		err := fs.Parse(args)
+		if err != nil {
+			t.Fatalf("Parse failed: %v", err)
+		}
+
+		if *port != 8080 {
+			t.Errorf("Expected 8080, got %d", *port)
+		}
+	})
+
+	t.Run("bool short flag with equals true", func(t *testing.T) {
+		fs := New("test")
+		debug := fs.BoolVar("debug", "d", false, "Debug mode")
+
+		args := []string{"-d=true"}
+		err := fs.Parse(args)
+		if err != nil {
+			t.Fatalf("Parse failed: %v", err)
+		}
+
+		if !*debug {
+			t.Error("Expected debug to be true")
+		}
+	})
+
+	t.Run("bool short flag with equals false", func(t *testing.T) {
+		fs := New("test")
+		debug := fs.BoolVar("debug", "d", true, "Debug mode") // Default true
+
+		args := []string{"-d=false"}
+		err := fs.Parse(args)
+		if err != nil {
+			t.Fatalf("Parse failed: %v", err)
+		}
+
+		if *debug {
+			t.Error("Expected debug to be false")
+		}
+	})
+
+	t.Run("duration short flag with equals", func(t *testing.T) {
+		fs := New("test")
+		timeout := fs.Duration("timeout", 30*time.Second, "Timeout duration")
+		fs.shortMap["t"] = fs.flags["timeout"] // Add short key
+
+		args := []string{"-t=45s"}
+		err := fs.Parse(args)
+		if err != nil {
+			t.Fatalf("Parse failed: %v", err)
+		}
+
+		expected := 45 * time.Second
+		if *timeout != expected {
+			t.Errorf("Expected %v, got %v", expected, *timeout)
+		}
+	})
+
+	t.Run("invalid short flag format with equals", func(t *testing.T) {
+		fs := New("test")
+		fs.StringVar("name", "n", "", "Your name")
+
+		// -ab=value should be invalid (only single char before =)
+		args := []string{"-ab=value"}
+		err := fs.Parse(args)
+		if err == nil {
+			t.Error("Expected error for invalid short flag format with equals")
+		}
+		if !strings.Contains(err.Error(), "invalid short flag format") {
+			t.Errorf("Expected 'invalid short flag format' error, got: %v", err)
+		}
+	})
+
+	t.Run("empty value with equals", func(t *testing.T) {
+		fs := New("test")
+		name := fs.StringVar("name", "n", "default", "Your name")
+
+		args := []string{"-n="}
+		err := fs.Parse(args)
+		if err != nil {
+			t.Fatalf("Parse failed: %v", err)
+		}
+
+		if *name != "" {
+			t.Errorf("Expected empty string, got '%s'", *name)
+		}
+	})
+}
+
+// TestCombinedShortFlags tests the new -abc syntax
+func TestCombinedShortFlags(t *testing.T) {
+	t.Run("combined boolean flags", func(t *testing.T) {
+		fs := New("test")
+		verbose := fs.BoolVar("verbose", "v", false, "Verbose output")
+		debug := fs.BoolVar("debug", "d", false, "Debug mode")
+		help := fs.BoolVar("help-mode", "h", false, "Help mode")
+
+		args := []string{"-vdh"}
+		err := fs.Parse(args)
+		if err != nil {
+			t.Fatalf("Parse failed: %v", err)
+		}
+
+		if !*verbose {
+			t.Error("Expected verbose to be true")
+		}
+		if !*debug {
+			t.Error("Expected debug to be true")
+		}
+		if !*help {
+			t.Error("Expected help to be true")
+		}
+	})
+
+	t.Run("combined flags with value at end", func(t *testing.T) {
+		fs := New("test")
+		verbose := fs.BoolVar("verbose", "v", false, "Verbose output")
+		debug := fs.BoolVar("debug", "d", false, "Debug mode")
+		name := fs.StringVar("name", "n", "", "Name")
+
+		args := []string{"-vdn", "John"}
+		err := fs.Parse(args)
+		if err != nil {
+			t.Fatalf("Parse failed: %v", err)
+		}
+
+		if !*verbose {
+			t.Error("Expected verbose to be true")
+		}
+		if !*debug {
+			t.Error("Expected debug to be true")
+		}
+		if *name != "John" {
+			t.Errorf("Expected 'John', got '%s'", *name)
+		}
+	})
+
+	t.Run("combined flags with int value at end", func(t *testing.T) {
+		fs := New("test")
+		verbose := fs.BoolVar("verbose", "v", false, "Verbose output")
+		port := fs.IntVar("port", "p", 0, "Port")
+
+		args := []string{"-vp", "8080"}
+		err := fs.Parse(args)
+		if err != nil {
+			t.Fatalf("Parse failed: %v", err)
+		}
+
+		if !*verbose {
+			t.Error("Expected verbose to be true")
+		}
+		if *port != 8080 {
+			t.Errorf("Expected 8080, got %d", *port)
+		}
+	})
+
+	t.Run("single flag that looks combined", func(t *testing.T) {
+		fs := New("test")
+		verbose := fs.BoolVar("verbose", "v", false, "Verbose output")
+
+		args := []string{"-v"}
+		err := fs.Parse(args)
+		if err != nil {
+			t.Fatalf("Parse failed: %v", err)
+		}
+
+		if !*verbose {
+			t.Error("Expected verbose to be true")
+		}
+	})
+
+	t.Run("non-boolean flag in middle of combined sequence", func(t *testing.T) {
+		fs := New("test")
+		_ = fs.BoolVar("verbose", "v", false, "Verbose output")
+		_ = fs.StringVar("name", "n", "", "Name")
+		_ = fs.BoolVar("debug", "d", false, "Debug mode")
+
+		// -vnd should fail because -n (non-boolean) is not last
+		args := []string{"-vnd", "value"}
+		err := fs.Parse(args)
+		if err == nil {
+			t.Error("Expected error for non-boolean flag in middle of combined sequence")
+		}
+		if !strings.Contains(err.Error(), "must be last in combined sequence") {
+			t.Errorf("Expected 'must be last in combined sequence' error, got: %v", err)
+		}
+	})
+
+	t.Run("unknown flag in combined sequence", func(t *testing.T) {
+		fs := New("test")
+		_ = fs.BoolVar("verbose", "v", false, "Verbose output")
+
+		args := []string{"-vx"}
+		err := fs.Parse(args)
+		if err == nil {
+			t.Error("Expected error for unknown flag in combined sequence")
+		}
+		if !strings.Contains(err.Error(), "unknown flag in combined sequence") {
+			t.Errorf("Expected 'unknown flag in combined sequence' error, got: %v", err)
+		}
+	})
+
+	t.Run("combined flag missing value for last non-boolean", func(t *testing.T) {
+		fs := New("test")
+		_ = fs.BoolVar("verbose", "v", false, "Verbose output")
+		_ = fs.StringVar("name", "n", "", "Name")
+
+		args := []string{"-vn"} // Missing value for -n
+		err := fs.Parse(args)
+		if err == nil {
+			t.Error("Expected error for missing value in combined sequence")
+		}
+		if !strings.Contains(err.Error(), "requires a value") {
+			t.Errorf("Expected 'requires a value' error, got: %v", err)
+		}
+	})
+}
+
+// TestAdvancedShortFlagCombinations tests edge cases and complex scenarios
+func TestAdvancedShortFlagCombinations(t *testing.T) {
+	t.Run("mixed long and new short syntax", func(t *testing.T) {
+		fs := New("test")
+		verbose := fs.BoolVar("verbose", "v", false, "Verbose output")
+		debug := fs.BoolVar("debug", "d", false, "Debug mode")
+		host := fs.StringVar("host", "h", "localhost", "Host")
+		port := fs.IntVar("port", "p", 8080, "Port")
+
+		args := []string{"--verbose", "-d", "-h=example.com", "-p", "9090"}
+		err := fs.Parse(args)
+		if err != nil {
+			t.Fatalf("Parse failed: %v", err)
+		}
+
+		if !*verbose {
+			t.Error("Expected verbose to be true")
+		}
+		if !*debug {
+			t.Error("Expected debug to be true")
+		}
+		if *host != "example.com" {
+			t.Errorf("Expected 'example.com', got '%s'", *host)
+		}
+		if *port != 9090 {
+			t.Errorf("Expected 9090, got %d", *port)
+		}
+	})
+
+	t.Run("performance test - many combined flags", func(t *testing.T) {
+		fs := New("test")
+
+		// Create many boolean flags
+		var flags []*bool
+		for i := 0; i < 10; i++ {
+			char := string(rune('a' + i))
+			flag := fs.BoolVar(fmt.Sprintf("flag%d", i), char, false, fmt.Sprintf("Flag %d", i))
+			flags = append(flags, flag)
+		}
+
+		// Test combined: -abcdefghij
+		args := []string{"-abcdefghij"}
+		err := fs.Parse(args)
+		if err != nil {
+			t.Fatalf("Parse failed: %v", err)
+		}
+
+		// Verify all flags are set
+		for i, flag := range flags {
+			if !*flag {
+				t.Errorf("Expected flag%d to be true", i)
+			}
+		}
+	})
+}
+
 func TestValidation(t *testing.T) {
 	t.Run("StringValidation", func(t *testing.T) {
 		testStringValidation(t)
@@ -942,7 +1237,7 @@ func testLoadJSONConfig(t *testing.T) {
 	}`
 
 	tmpfile := createTempConfigFile(t, configContent, "test-config-*.json")
-	defer os.Remove(tmpfile)
+	defer func() { _ = os.Remove(tmpfile) }()
 
 	fs, host, port, debug, rate, tags := setupBasicFlags("test")
 	fs.SetConfigFile(tmpfile)
@@ -962,7 +1257,7 @@ func testCommandLineOverridesConfig(t *testing.T) {
 	}`
 
 	tmpfile := createTempConfigFile(t, configContent, "test-override-*.json")
-	defer os.Remove(tmpfile)
+	defer func() { _ = os.Remove(tmpfile) }()
 
 	fs := New("test")
 	host := fs.String("host", "default", "Host flag")
@@ -994,7 +1289,7 @@ func testConfigFileNotFound(t *testing.T) {
 func testInvalidJSONConfig(t *testing.T) {
 	configContent := `{ "host": "test", invalid json }`
 	tmpfile := createTempConfigFile(t, configContent, "test-invalid-*.json")
-	defer os.Remove(tmpfile)
+	defer func() { _ = os.Remove(tmpfile) }()
 
 	fs := New("test")
 	_ = fs.String("host", "default", "Host flag")

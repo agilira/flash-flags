@@ -13,7 +13,36 @@
 //   - Environment variable integration
 //   - Flag validation and constraints
 //   - Grouped help output
-//   - Short and long flag support
+//   - Comprehensive flag syntax support (POSIX/GNU-style)
+//   - Short and long flag support with combined syntax
+//
+// Supported Flag Syntax:
+//
+// FlashFlags supports comprehensive POSIX/GNU-style flag syntax:
+//
+//	Long flags:
+//	  --flag value          (space-separated)
+//	  --flag=value          (equals-separated)
+//	  --boolean-flag        (boolean without value)
+//	  --boolean-flag=true   (explicit boolean value)
+//
+//	Short flags:
+//	  -f value              (space-separated)
+//	  -f=value              (equals-separated)
+//	  -b                    (boolean short flag)
+//	  -b=false              (explicit boolean value)
+//
+//	Combined short flags:
+//	  -abc                  (equivalent to -a -b -c)
+//	  -abc value            (with value for last flag)
+//	  -vdp 8080             (verbose + debug + port=8080)
+//
+//	Special syntax:
+//	  --help, -h            (shows help)
+//	  --                    (end of flags marker)
+//
+// All boolean flags except the last in combined sequences (-abc) must be boolean.
+// The last flag in a combined sequence can be any type and will consume the next argument as its value.
 //
 // Thread Safety:
 //

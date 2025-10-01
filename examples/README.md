@@ -6,6 +6,7 @@ This directory contains working examples demonstrating FlashFlags capabilities.
 
 | Demo | Description | Features Demonstrated |
 |------|-------------|----------------------|
+| **[advanced-syntax/](advanced-syntax/)** | POSIX/GNU flag syntax compatibility | `-f=value` assignment, `-abc` combined flags |
 | **[basic/](basic/)** | Complete web server configuration | Groups, validation, dependencies, help system |
 | **[config/](config/)** | Configuration file integration | JSON config files, auto-discovery |
 | **[env/](env/)** | Environment variable integration | Env var lookup, prefixes, custom names |
@@ -13,6 +14,15 @@ This directory contains working examples demonstrating FlashFlags capabilities.
 | **[required/](required/)** | Required flags and dependencies | Required flags, dependencies, validation errors |
 
 ## Quick Start
+
+### Try the Advanced Syntax Demo
+
+```bash
+cd advanced-syntax
+go run main.go
+```
+
+This will show examples of POSIX/GNU compatible syntax including `-f=value` and `-abc` combined flags.
 
 ### Run the Basic Demo
 
@@ -62,11 +72,12 @@ Each demo is self-contained with its own `go.mod` file, so you can run them inde
 
 ## Learning Path
 
-1. **Start with `basic/`** - Shows all major features
-2. **Try `help/`** - Understanding the help system
-3. **Explore `config/`** - Configuration file integration
-4. **Test `env/`** - Environment variable support
-5. **Check `required/`** - Validation and constraints
+1. **Start with `advanced-syntax/`** - New POSIX/GNU syntax features
+2. **Try `basic/`** - Shows all major features
+3. **Explore `help/`** - Understanding the help system
+4. **Test `config/`** - Configuration file integration
+5. **Check `env/`** - Environment variable support
+6. **Validate with `required/`** - Validation and constraints
 
 ## Building and Running
 

@@ -22,11 +22,44 @@ FlashFlags is an ultra-fast, zero-dependency, lock-free command-line flag parsin
 - **Help System**: Professional help output with grouping
 - **Dependencies**: Flag dependency management
 - **Type Safety**: Strong typing for all flag types
-- **Short Flags**: Single-character flag support
+- **POSIX/GNU Syntax**: Complete flag syntax support including combined short flags
+- **Flexible Parsing**: Support for `-f=value` and `-abc` combined syntax
 
 ## Compatibility and Support
 
 FlashFlags is designed for Go 1.23+ environments and follows Long-Term Support guidelines to ensure consistent performance across production deployments.
+
+## Flag Syntax
+
+FlashFlags supports comprehensive POSIX/GNU-style flag syntax for maximum compatibility:
+
+### Long Flags
+```bash
+--flag value          # Space-separated value
+--flag=value          # Equals-separated value  
+--boolean-flag        # Boolean without value (true)
+--boolean-flag=false  # Explicit boolean value
+```
+
+### Short Flags
+```bash
+-f value              # Space-separated value
+-f=value              # Equals-separated value (NEW!)
+-b                    # Boolean short flag (true)
+-b=false              # Explicit boolean value
+```
+
+### Combined Short Flags (NEW!)
+```bash
+-abc                  # Equivalent to -a -b -c (all boolean)
+-abc value            # Last flag gets the value: -a -b -c value
+-vdp 8080             # Verbose + debug + port: -v -d -p 8080
+```
+
+**Rules for combined flags:**
+- All flags except the last must be boolean
+- The last flag can be any type and consumes the next argument
+- Example: `-vhp 3000` sets verbose=true, help=true, port=3000
 
 ## Performance
 
@@ -92,11 +125,21 @@ func main() {
 # Basic usage
 ./myapp --host 0.0.0.0 --port 3000 --verbose
 
-# Short flags
+# Short flags with space
 ./myapp -h 0.0.0.0 -p 3000 -v
 
-# Mixed format
-./myapp --host=192.168.1.1 -p 8080
+# Short flags with equals (NEW!)
+./myapp -h=192.168.1.1 -p=8080 -v=true
+
+# Combined short flags (NEW!)
+./myapp -hvp 3000              # -h -v -p 3000
+./myapp -abc                   # -a -b -c (all boolean)
+
+# Mixed formats
+./myapp --host=192.168.1.1 -vp 8080 --debug=false
+
+# Environment variables + CLI
+MYAPP_HOST=api.example.com ./myapp -p=3000 --verbose
 
 # Help
 ./myapp --help

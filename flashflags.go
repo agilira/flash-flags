@@ -572,13 +572,18 @@ func (fs *FlagSet) StringSlice(name string, defaultValue []string, usage string)
 //
 //	--flag value          (long flag with space-separated value)
 //	--flag=value          (long flag with equals-separated value)
-//	-f value             (short flag with space-separated value)
-//	--boolean-flag       (boolean flag without value, defaults to true)
-//	--boolean-flag=true  (explicit boolean value)
+//	-f value              (short flag with space-separated value)
+//	-f=value              (short flag with equals-separated value)
+//	-abc                  (combined short flags, all must be boolean except last)
+//	-abc value            (combined short flags with value for last non-boolean flag)
+//	--boolean-flag        (boolean flag without value, defaults to true)
+//	--boolean-flag=true   (explicit boolean value)
+//	-b                    (boolean short flag, defaults to true)
+//	-b=false              (explicit boolean short flag value)
 //
 // Special handling:
 //
-//	--help, -h           (shows help and returns error "help requested")
+//	--help, -h            (shows help and returns error "help requested")
 //
 // Example:
 //
@@ -656,9 +661,9 @@ func (fs *FlagSet) isHelpFlag(arg string) bool {
 	return arg == "--help" || arg == "-h"
 }
 
-// isShortFlag checks if the argument is a short flag
+// isShortFlag checks if the argument is a short flag (includes -f, -f=value, -abc)
 func (fs *FlagSet) isShortFlag(arg string) bool {
-	return len(arg) == 2 && arg[0] == '-' && arg[1] != '-'
+	return len(arg) >= 2 && arg[0] == '-' && arg[1] != '-'
 }
 
 // isLongFlag checks if the argument is a long flag
@@ -666,9 +671,16 @@ func (fs *FlagSet) isLongFlag(arg string) bool {
 	return strings.HasPrefix(arg, "--")
 }
 
-// parseShortFlag handles short flag parsing (-p, -d)
+// parseShortFlag handles short flag parsing (-p, -d, -p=value, -abc)
 func (fs *FlagSet) parseShortFlag(args []string, i int) (int, error) {
 	arg := args[i]
+
+	// Check for combined shorthand flags or single flag with equals
+	if len(arg) > 2 {
+		return fs.parseComplexShortFlag(args, i)
+	}
+
+	// Simple single short flag: -p
 	shortKey := string(arg[1])
 	flag, exists := fs.shortMap[shortKey]
 	if !exists {
@@ -699,6 +711,99 @@ func (fs *FlagSet) parseShortFlag(args []string, i int) (int, error) {
 	return 1, nil // Consumed one extra argument
 }
 
+// parseComplexShortFlag handles complex short flag patterns: -f=value and -abc (combined flags)
+func (fs *FlagSet) parseComplexShortFlag(args []string, i int) (int, error) {
+	arg := args[i][1:] // Remove initial '-'
+
+	// Check for equals sign: -f=value
+	if eqPos := strings.IndexByte(arg, '='); eqPos != -1 {
+		return fs.parseShortFlagWithEquals(arg, eqPos)
+	}
+
+	// Combined shorthand flags: -abc
+	return fs.parseCombinedShortFlags(args, i, arg)
+}
+
+// parseShortFlagWithEquals handles -f=value syntax with optimized parsing
+func (fs *FlagSet) parseShortFlagWithEquals(arg string, eqPos int) (int, error) {
+	if eqPos != 1 {
+		// Invalid format: should be -f=value, not -ab=value
+		return 0, fmt.Errorf("invalid short flag format with equals: -%s", arg)
+	}
+
+	shortKey := string(arg[0])
+	flagValue := arg[eqPos+1:]
+
+	flag, exists := fs.shortMap[shortKey]
+	if !exists {
+		return 0, fmt.Errorf("unknown flag: -%s", shortKey)
+	}
+
+	// For boolean flags, -f=true or -f=false
+	if flag.flagType == "bool" {
+		err := fs.setFlagValue(flag.name, flagValue)
+		if err != nil {
+			return 0, err
+		}
+		return 0, nil
+	}
+
+	// For non-boolean flags, -f=value
+	err := fs.setFlagValue(flag.name, flagValue)
+	if err != nil {
+		return 0, err
+	}
+	return 0, nil
+}
+
+// parseCombinedShortFlags handles -abc syntax (GNU-style combined short flags)
+// Performance-optimized with single-pass parsing and minimal allocations
+func (fs *FlagSet) parseCombinedShortFlags(args []string, i int, flagChars string) (int, error) {
+	consumed := 0
+
+	// Process each character as a separate flag
+	for pos, char := range []byte(flagChars) {
+		shortKey := string(char)
+		flag, exists := fs.shortMap[shortKey]
+		if !exists {
+			return 0, fmt.Errorf("unknown flag in combined sequence: -%s", shortKey)
+		}
+
+		// All flags except the last must be boolean for combined syntax
+		isLastFlag := pos == len(flagChars)-1
+
+		if flag.flagType == "bool" {
+			// Set boolean flag to true
+			flag.value = true
+			if flag.ptr != nil {
+				if ptr, ok := flag.ptr.(*bool); ok {
+					*ptr = true
+				}
+			}
+			flag.changed = true
+		} else {
+			// Non-boolean flag must be the last in the sequence
+			if !isLastFlag {
+				return 0, fmt.Errorf("non-boolean flag -%s must be last in combined sequence -%s", shortKey, flagChars)
+			}
+
+			// Get value from next argument
+			if i+1 >= len(args) {
+				return 0, fmt.Errorf("flag -%s in combined sequence requires a value", shortKey)
+			}
+
+			flagValue := args[i+1]
+			err := fs.setFlagValue(flag.name, flagValue)
+			if err != nil {
+				return 0, err
+			}
+			consumed = 1 // Consumed the next argument for value
+		}
+	}
+
+	return consumed, nil
+}
+
 // parseLongFlag handles long flag parsing (--name)
 func (fs *FlagSet) parseLongFlag(args []string, i int) (int, error) {
 	arg := args[i][2:] // Remove -- prefix
@@ -710,8 +815,8 @@ func (fs *FlagSet) parseLongFlag(args []string, i int) (int, error) {
 		flagValue = arg[eqPos+1:]
 	} else {
 		flagName = arg
-		// Look for value in next argument
-		if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+		// Look for value in next argument (must not be another flag)
+		if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
 			flagValue = args[i+1]
 			// Set flag value
 			err := fs.setFlagValue(flagName, flagValue)
