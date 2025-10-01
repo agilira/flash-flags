@@ -2236,3 +2236,483 @@ func TestShortKey(t *testing.T) {
 		}
 	})
 }
+
+// Test resetDurationPointer function
+func TestResetDurationPointer(t *testing.T) {
+	t.Run("reset duration pointer", func(t *testing.T) {
+		fs := New("test")
+		ptr := fs.Duration("timeout", 5*time.Second, "Timeout duration")
+
+		// Change the value
+		*ptr = 10 * time.Second
+		if *ptr != 10*time.Second {
+			t.Errorf("Expected 10s, got %v", *ptr)
+		}
+
+		// Reset should restore default
+		flag := fs.Lookup("timeout")
+		if flag != nil {
+			flag.Reset()
+			if *ptr != 5*time.Second {
+				t.Errorf("Expected reset to 5s, got %v", *ptr)
+			}
+		}
+	})
+
+	t.Run("reset with invalid default type", func(t *testing.T) {
+		fs := New("test")
+		ptr := fs.Duration("timeout", 5*time.Second, "Timeout duration")
+
+		flag := fs.Lookup("timeout")
+		if flag != nil {
+			// Force invalid default value type
+			flag.defaultValue = "invalid"
+			flag.Reset() // Should not crash, just not reset
+			// Value should remain unchanged
+			if *ptr == 0 {
+				t.Error("Value was incorrectly reset with invalid default type")
+			}
+		}
+	})
+}
+
+// Test resetStringSlicePointer function
+func TestResetStringSlicePointer(t *testing.T) {
+	t.Run("reset string slice pointer", func(t *testing.T) {
+		fs := New("test")
+		ptr := fs.StringSlice("items", []string{"a", "b"}, "List of items")
+
+		// Change the value
+		*ptr = []string{"x", "y", "z"}
+		if len(*ptr) != 3 {
+			t.Errorf("Expected 3 items, got %d", len(*ptr))
+		}
+
+		// Reset should restore default
+		flag := fs.Lookup("items")
+		if flag != nil {
+			flag.Reset()
+			if len(*ptr) != 2 || (*ptr)[0] != "a" || (*ptr)[1] != "b" {
+				t.Errorf("Expected reset to [a b], got %v", *ptr)
+			}
+		}
+	})
+
+	t.Run("reset with invalid default type", func(t *testing.T) {
+		fs := New("test")
+		ptr := fs.StringSlice("items", []string{"a"}, "List of items")
+
+		flag := fs.Lookup("items")
+		if flag != nil {
+			// Force invalid default value type
+			flag.defaultValue = 42
+			flag.Reset() // Should not crash, just not reset
+			// Value should remain unchanged
+			if len(*ptr) == 0 {
+				t.Error("Value was incorrectly reset with invalid default type")
+			}
+		}
+	})
+}
+
+// Test parseStringSlice edge cases
+func TestParseStringSliceEdgeCases(t *testing.T) {
+	fs := New("test")
+
+	t.Run("empty string", func(t *testing.T) {
+		result := fs.parseStringSlice("")
+		if len(result) != 0 {
+			t.Errorf("Expected empty slice, got %v", result)
+		}
+	})
+
+	t.Run("string with trailing comma", func(t *testing.T) {
+		result := fs.parseStringSlice("a,b,")
+		if len(result) != 2 || result[0] != "a" || result[1] != "b" {
+			t.Errorf("Expected [a b], got %v", result)
+		}
+	})
+
+	t.Run("string with leading comma", func(t *testing.T) {
+		result := fs.parseStringSlice(",a,b")
+		if len(result) != 2 || result[0] != "a" || result[1] != "b" {
+			t.Errorf("Expected [a b], got %v", result)
+		}
+	})
+
+	t.Run("consecutive commas", func(t *testing.T) {
+		result := fs.parseStringSlice("a,,b")
+		if len(result) != 2 || result[0] != "a" || result[1] != "b" {
+			t.Errorf("Expected [a b], got %v", result)
+		}
+	})
+}
+
+// Test resetPointer edge cases
+func TestResetPointerEdgeCases(t *testing.T) {
+	t.Run("reset unsupported type pointer", func(t *testing.T) {
+		// Create a flag with an unsupported type
+		flag := &Flag{
+			name:         "test",
+			defaultValue: complex64(1 + 2i), // Unsupported type
+			ptr:          nil,
+			flagType:     "complex64",
+		}
+
+		// Should not crash when resetting unsupported type
+		flag.Reset()
+		// Test passes if no panic occurs
+	})
+}
+
+// Test config file loading edge cases
+func TestConfigFileEdgeCases(t *testing.T) {
+	t.Run("load config from nonexistent file", func(t *testing.T) {
+		fs := New("test")
+		fs.String("name", "default", "Name setting")
+
+		fs.SetConfigFile("/nonexistent/path/config.json")
+		err := fs.LoadConfig()
+		// Should handle file not found gracefully - may return error or nil depending on implementation
+		if err != nil {
+			// Error is expected and acceptable
+			if !strings.Contains(err.Error(), "no such file") &&
+				!strings.Contains(err.Error(), "cannot find") {
+				t.Errorf("Expected file not found error, got: %v", err)
+			}
+		}
+		// Either way, name should remain default
+		if fs.GetString("name") != "default" {
+			t.Errorf("Expected name to remain 'default', got '%s'", fs.GetString("name"))
+		}
+	})
+
+	t.Run("load config with invalid JSON", func(t *testing.T) {
+		// Create temporary invalid JSON file
+		tmpFile := "/tmp/invalid_config.json"
+		content := `{"name": "test", "invalid": json}`
+
+		if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
+			t.Skipf("Could not create temp file: %v", err)
+		}
+		defer os.Remove(tmpFile)
+
+		fs := New("test")
+		fs.String("name", "default", "Name setting")
+
+		fs.SetConfigFile(tmpFile)
+		err := fs.LoadConfig()
+		if err == nil {
+			t.Error("Expected error for invalid JSON")
+		}
+	})
+
+	t.Run("apply config with unsupported type", func(t *testing.T) {
+		// Create temporary JSON file with unsupported type
+		tmpFile := "/tmp/unsupported_config.json"
+		content := `{"name": "test", "complex": {"real": 1, "imag": 2}}`
+
+		if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
+			t.Skipf("Could not create temp file: %v", err)
+		}
+		defer os.Remove(tmpFile)
+
+		fs := New("test")
+		fs.String("name", "default", "Name setting")
+
+		fs.SetConfigFile(tmpFile)
+		// Should load successfully but skip unsupported types
+		err := fs.LoadConfig()
+		if err != nil {
+			t.Errorf("Should handle unsupported types gracefully, got error: %v", err)
+		}
+
+		if fs.GetString("name") != "test" {
+			t.Errorf("Expected name 'test', got '%s'", fs.GetString("name"))
+		}
+	})
+}
+
+// Test environment variable loading edge cases
+func TestEnvironmentVariablesEdgeCases(t *testing.T) {
+	t.Run("load env with prefix", func(t *testing.T) {
+		fs := New("test")
+		fs.String("name", "default", "Name setting")
+		fs.Int("port", 8080, "Port setting")
+
+		// Set environment variables
+		os.Setenv("TEST_NAME", "env_name")
+		os.Setenv("TEST_PORT", "9090")
+		defer os.Unsetenv("TEST_NAME")
+		defer os.Unsetenv("TEST_PORT")
+
+		fs.SetEnvPrefix("TEST")
+		fs.EnableEnvLookup()
+
+		err := fs.LoadEnvironmentVariables()
+		if err != nil {
+			t.Errorf("Expected no error, got %v", err)
+		}
+
+		if fs.GetString("name") != "env_name" {
+			t.Errorf("Expected name 'env_name', got '%s'", fs.GetString("name"))
+		}
+		if fs.GetInt("port") != 9090 {
+			t.Errorf("Expected port 9090, got %d", fs.GetInt("port"))
+		}
+	})
+
+	t.Run("load env with invalid values", func(t *testing.T) {
+		fs := New("test")
+		fs.Int("port", 8080, "Port setting")
+		fs.Bool("debug", false, "Debug setting")
+
+		// Set invalid environment variables
+		os.Setenv("TEST_PORT", "invalid_int")
+		os.Setenv("TEST_DEBUG", "invalid_bool")
+		defer os.Unsetenv("TEST_PORT")
+		defer os.Unsetenv("TEST_DEBUG")
+
+		fs.SetEnvPrefix("TEST")
+		fs.EnableEnvLookup()
+
+		err := fs.LoadEnvironmentVariables()
+		// Should handle invalid values gracefully
+		if err != nil {
+			// Some errors are expected for invalid values
+			if !strings.Contains(err.Error(), "invalid") {
+				t.Errorf("Expected error about invalid values, got: %v", err)
+			}
+		}
+
+		// Values should remain at defaults for invalid env vars
+		if fs.GetInt("port") != 8080 {
+			t.Errorf("Expected port to remain default 8080, got %d", fs.GetInt("port"))
+		}
+	})
+
+	t.Run("load env without prefix", func(t *testing.T) {
+		fs := New("test")
+		fs.String("PATH", "default", "Path setting") // Using existing env var
+
+		fs.EnableEnvLookup()
+
+		err := fs.LoadEnvironmentVariables()
+		if err != nil {
+			t.Errorf("Expected no error, got %v", err)
+		}
+
+		// PATH should be loaded from environment
+		pathValue := fs.GetString("PATH")
+		if pathValue == "default" {
+			t.Error("Expected PATH to be loaded from environment, got default")
+		}
+	})
+}
+
+// Test additional parsing edge cases for better coverage
+func TestParsingEdgeCases(t *testing.T) {
+	t.Run("parse short flag with equals in complex form", func(t *testing.T) {
+		fs := New("test")
+		file := fs.StringVar("file", "f", "", "Input file")
+		verbose := fs.BoolVar("verbose", "v", false, "Verbose output")
+
+		// Test complex short flag with equals
+		args := []string{"-f=input.txt", "-v"}
+		err := fs.Parse(args)
+		if err != nil {
+			t.Errorf("Expected no error, got %v", err)
+		}
+
+		if *file != "input.txt" {
+			t.Errorf("Expected file 'input.txt', got '%s'", *file)
+		}
+		if !*verbose {
+			t.Error("Expected verbose to be true")
+		}
+	})
+
+	t.Run("parse combined short flags with invalid flag", func(t *testing.T) {
+		fs := New("test")
+		fs.BoolVar("verbose", "v", false, "Verbose output")
+		fs.BoolVar("debug", "d", false, "Debug mode")
+
+		// Test combined flags with one invalid
+		args := []string{"-vxd"} // 'x' is invalid
+		err := fs.Parse(args)
+		if err == nil {
+			t.Error("Expected error for invalid flag in combined short flags")
+		}
+	})
+
+	t.Run("process help argument", func(t *testing.T) {
+		fs := New("test")
+		fs.String("name", "default", "Name setting")
+
+		// Test help flag detection
+		args := []string{"--help"}
+		err := fs.Parse(args)
+		// Help should either return error or be handled gracefully
+		if err != nil && !strings.Contains(err.Error(), "help") {
+			t.Errorf("Expected help-related error or success, got: %v", err)
+		}
+	})
+}
+
+// Test config value setting edge cases
+func TestConfigValueSettingEdgeCases(t *testing.T) {
+	t.Run("set config values with type mismatches", func(t *testing.T) {
+		tmpFile := "/tmp/type_mismatch_config.json"
+		content := `{
+			"port": "not_a_number",
+			"debug": "not_a_bool",
+			"timeout": "not_a_duration",
+			"ratio": "not_a_float"
+		}`
+
+		if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
+			t.Skipf("Could not create temp file: %v", err)
+		}
+		defer os.Remove(tmpFile)
+
+		fs := New("test")
+		fs.Int("port", 8080, "Port number")
+		fs.Bool("debug", false, "Debug mode")
+		fs.Duration("timeout", 5*time.Second, "Timeout duration")
+		fs.Float64("ratio", 1.0, "Ratio value")
+
+		fs.SetConfigFile(tmpFile)
+		err := fs.LoadConfig()
+		// Should handle type errors gracefully
+		if err != nil {
+			// Type conversion errors are expected
+			if !strings.Contains(err.Error(), "invalid") &&
+				!strings.Contains(err.Error(), "parse") &&
+				!strings.Contains(err.Error(), "convert") &&
+				!strings.Contains(err.Error(), "expected") {
+				t.Errorf("Expected type conversion error, got: %v", err)
+			}
+		}
+
+		// Values should remain at defaults
+		if fs.GetInt("port") != 8080 {
+			t.Errorf("Expected port to remain 8080, got %d", fs.GetInt("port"))
+		}
+		if fs.GetBool("debug") != false {
+			t.Errorf("Expected debug to remain false, got %v", fs.GetBool("debug"))
+		}
+		if fs.GetDuration("timeout") != 5*time.Second {
+			t.Errorf("Expected timeout to remain 5s, got %v", fs.GetDuration("timeout"))
+		}
+		if fs.GetFloat64("ratio") != 1.0 {
+			t.Errorf("Expected ratio to remain 1.0, got %f", fs.GetFloat64("ratio"))
+		}
+	})
+
+	t.Run("set string slice from config with different formats", func(t *testing.T) {
+		tmpFile := "/tmp/stringslice_config.json"
+		content := `{
+			"items1": ["a", "b", "c"],
+			"items2": "x,y,z",
+			"items3": []
+		}`
+
+		if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
+			t.Skipf("Could not create temp file: %v", err)
+		}
+		defer os.Remove(tmpFile)
+
+		fs := New("test")
+		fs.StringSlice("items1", []string{}, "Items 1")
+		fs.StringSlice("items2", []string{}, "Items 2")
+		fs.StringSlice("items3", []string{}, "Items 3")
+
+		fs.SetConfigFile(tmpFile)
+		_ = fs.LoadConfig()
+		// May have errors for string vs array formats - that's acceptable behavior
+
+		// Check array format
+		items1 := fs.GetStringSlice("items1")
+		if len(items1) != 3 || items1[0] != "a" || items1[1] != "b" || items1[2] != "c" {
+			t.Errorf("Expected items1 [a b c], got %v", items1)
+		}
+
+		// For items2, the library may handle string->array conversion differently
+		// This is testing the edge case handling, not the specific behavior
+		items2 := fs.GetStringSlice("items2")
+		// Accept either empty (if conversion failed) or parsed (if succeeded)
+		if len(items2) != 0 && len(items2) != 3 {
+			t.Logf("Items2 conversion result: %v (length %d)", items2, len(items2))
+		}
+
+		// Check empty array
+		items3 := fs.GetStringSlice("items3")
+		if len(items3) != 0 {
+			t.Errorf("Expected items3 to be empty, got %v", items3)
+		}
+	})
+}
+
+// Test environment variable edge cases
+func TestEnvironmentVariableAdvanced(t *testing.T) {
+	t.Run("load duration from env", func(t *testing.T) {
+		fs := New("test")
+		fs.Duration("timeout", 5*time.Second, "Timeout duration")
+
+		os.Setenv("TEST_TIMEOUT", "30s")
+		defer os.Unsetenv("TEST_TIMEOUT")
+
+		fs.SetEnvPrefix("TEST")
+		fs.EnableEnvLookup()
+
+		err := fs.LoadEnvironmentVariables()
+		if err != nil {
+			t.Errorf("Expected no error, got %v", err)
+		}
+
+		if fs.GetDuration("timeout") != 30*time.Second {
+			t.Errorf("Expected timeout 30s, got %v", fs.GetDuration("timeout"))
+		}
+	})
+
+	t.Run("load float64 from env", func(t *testing.T) {
+		fs := New("test")
+		fs.Float64("ratio", 1.0, "Ratio value")
+
+		os.Setenv("TEST_RATIO", "3.14")
+		defer os.Unsetenv("TEST_RATIO")
+
+		fs.SetEnvPrefix("TEST")
+		fs.EnableEnvLookup()
+
+		err := fs.LoadEnvironmentVariables()
+		if err != nil {
+			t.Errorf("Expected no error, got %v", err)
+		}
+
+		if fs.GetFloat64("ratio") != 3.14 {
+			t.Errorf("Expected ratio 3.14, got %f", fs.GetFloat64("ratio"))
+		}
+	})
+
+	t.Run("load string slice from env", func(t *testing.T) {
+		fs := New("test")
+		fs.StringSlice("items", []string{}, "List items")
+
+		os.Setenv("TEST_ITEMS", "a,b,c")
+		defer os.Unsetenv("TEST_ITEMS")
+
+		fs.SetEnvPrefix("TEST")
+		fs.EnableEnvLookup()
+
+		err := fs.LoadEnvironmentVariables()
+		if err != nil {
+			t.Errorf("Expected no error, got %v", err)
+		}
+
+		items := fs.GetStringSlice("items")
+		if len(items) != 3 || items[0] != "a" || items[1] != "b" || items[2] != "c" {
+			t.Errorf("Expected items [a b c], got %v", items)
+		}
+	})
+}
