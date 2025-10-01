@@ -30,9 +30,9 @@ func BenchmarkFlashFlags(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		fs := flashflags.New("benchmark")
-		env := fs.StringVar("env", "e", "prod", "Environment")
-		verbose := fs.BoolVar("verbose", "v", false, "Verbose output")
-		timeout := fs.StringVar("timeout", "t", "30", "Timeout in seconds")
+		env := fs.String("env", "prod", "Environment")
+		verbose := fs.Bool("verbose", false, "Verbose output")
+		timeout := fs.String("timeout", "30", "Timeout in seconds")
 
 		args := []string{"--env", "staging", "--verbose", "--timeout", "60"}
 		err := fs.Parse(args)
@@ -58,7 +58,7 @@ func BenchmarkStdFlag(b *testing.B) {
 		verbose := fs.Bool("verbose", false, "Verbose output")
 		timeout := fs.String("timeout", "30", "Timeout in seconds")
 
-		args := []string{"-env", "staging", "-verbose", "-timeout", "60"}
+		args := []string{"--env", "staging", "--verbose", "--timeout", "60"}
 		err := fs.Parse(args)
 		if err != nil {
 			b.Fatal(err)
@@ -76,9 +76,9 @@ func BenchmarkPflag(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		fs := pflag.NewFlagSet("benchmark", pflag.ExitOnError)
-		env := fs.StringP("env", "e", "prod", "Environment")
-		verbose := fs.BoolP("verbose", "v", false, "Verbose output")
-		timeout := fs.StringP("timeout", "t", "30", "Timeout in seconds")
+		env := fs.String("env", "prod", "Environment")
+		verbose := fs.Bool("verbose", false, "Verbose output")
+		timeout := fs.String("timeout", "30", "Timeout in seconds")
 
 		args := []string{"--env", "staging", "--verbose", "--timeout", "60"}
 		err := fs.Parse(args)

@@ -1,0 +1,57 @@
+FlashFlags v1.1.4
+Released: October 1, 2025
+
+Drop-in Stdlib Replacement and Remaining Arguments Support
+
+NEW FEATURES
+
+Stdlib Compatibility Package
+- Complete drop-in replacement for Go's flag package via /stdlib subpackage
+- Zero-code migration: change import from "flag" to "github.com/agilira/flash-flags/stdlib/flag"
+- All stdlib APIs implemented with identical behavior
+- Pointer synchronization mechanism for seamless integration
+
+Remaining Arguments Support
+- Added Args() method returning slice of unparsed arguments
+- Added NArg() method returning count of remaining arguments  
+- Added Arg(i) method for accessing individual arguments by index
+- Support for "--" separator to stop flag parsing
+
+Integer Overflow Protection
+- Added overflow-safe conversions for uint and uint64 types
+- Built-in bounds checking using math.MaxInt constraints
+- Enhanced security for production deployments
+
+Boolean Flag Compatibility
+- Improved boolean flag parsing for stdlib compatibility
+- Support for explicit boolean values: --flag=true, --flag=false
+- Maintains GNU syntax compatibility while adding stdlib behavior
+
+TECHNICAL IMPROVEMENTS
+
+Core Parser Enhancements
+- Added args field to FlashSet for remaining arguments collection
+- Modified parseArguments() to handle "--" separator correctly
+- Enhanced argument processing to separate flags from remaining args
+- Improved boolean flag detection and parsing logic
+
+Stdlib Package Implementation
+- Complete API coverage matching Go standard library
+- Overflow protection for IntVar, Int64Var, UintVar, Uint64Var
+- Error handling aligned with stdlib expectations
+- Thread-safe operations maintaining lock-free design
+
+PERFORMANCE
+
+Benchmark Improvements
+- Corrected benchmark methodology for fair comparisons
+- Maintained zero-allocation parsing characteristics
+- Preserved performance advantages in compatibility layer
+
+COMPATIBILITY
+
+Backward Compatibility
+- All existing APIs preserved without changes
+- Existing flag parsing behavior maintained
+- Smooth upgrade path for current users
+- Zero breaking changes

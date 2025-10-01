@@ -268,6 +268,7 @@ type FlagSet struct {
 	configLoaded    bool     // Whether config has been loaded
 	envPrefix       string   // Prefix for environment variables (e.g., "MYAPP")
 	enableEnvLookup bool     // Whether to lookup environment variables
+	args            []string // Remaining non-flag arguments after parsing
 }
 
 // New creates a new FlagSet with the specified name.
@@ -622,23 +623,44 @@ func (fs *FlagSet) Parse(args []string) error {
 
 // parseArguments handles the main argument parsing loop
 func (fs *FlagSet) parseArguments(args []string) error {
+	// Reset args slice for new parsing
+	fs.args = nil
+
 	for i := 0; i < len(args); i++ {
+		arg := args[i]
+
+		// Handle special "--" separator (everything after is non-flag)
+		if arg == "--" {
+			// Collect all remaining args as non-flag arguments
+			if i+1 < len(args) {
+				fs.args = append(fs.args, args[i+1:]...)
+			}
+			return nil
+		}
+
+		// Check if this is a flag (starts with -)
+		if !strings.HasPrefix(arg, "-") {
+			// Non-flag argument - collect it
+			fs.args = append(fs.args, arg)
+			continue
+		}
+
+		// Process the flag
 		consumed, err := fs.processArgument(args, i)
 		if err != nil {
 			return err
 		}
+
+		// Move past consumed arguments
 		i += consumed
 	}
 	return nil
 }
 
 // processArgument processes a single argument and returns consumed count
+// Assumes the argument is a flag (starts with -)
 func (fs *FlagSet) processArgument(args []string, i int) (int, error) {
 	arg := args[i]
-
-	if !strings.HasPrefix(arg, "-") {
-		return 0, nil
-	}
 
 	if fs.isHelpFlag(arg) {
 		fs.PrintHelp()
@@ -815,21 +837,23 @@ func (fs *FlagSet) parseLongFlag(args []string, i int) (int, error) {
 		flagValue = arg[eqPos+1:]
 	} else {
 		flagName = arg
-		// Look for value in next argument (must not be another flag)
-		if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-			flagValue = args[i+1]
-			// Set flag value
-			err := fs.setFlagValue(flagName, flagValue)
-			if err != nil {
-				return 0, err
-			}
-			return 1, nil // Consumed one extra argument
-		}
-		// Boolean flag or error
+		// Check if this is a boolean flag first
 		if flag, exists := fs.flags[flagName]; exists && flag.flagType == "bool" {
+			// Boolean flag without explicit value = true
 			flagValue = "true"
 		} else {
-			return 0, fmt.Errorf("flag --%s requires a value", flagName)
+			// Non-boolean flag: look for value in next argument (must not be another flag)
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				flagValue = args[i+1]
+				// Set flag value
+				err := fs.setFlagValue(flagName, flagValue)
+				if err != nil {
+					return 0, err
+				}
+				return 1, nil // Consumed one extra argument
+			} else {
+				return 0, fmt.Errorf("flag --%s requires a value", flagName)
+			}
 		}
 	}
 
@@ -1779,6 +1803,57 @@ func (fs *FlagSet) addDependencies(line *strings.Builder, flag *Flag) {
 //	}
 //
 // Use Help() if you need the help text as a string for custom formatting.
+
+// Args returns the remaining non-flag arguments after parsing.
+// These are the arguments that were not consumed by any flag.
+// Returns empty slice if no arguments remain or Parse() has not been called.
+//
+// Example:
+//
+//	fs := flashflags.New("myapp")
+//	fs.String("host", "localhost", "Server host")
+//	_ = fs.Parse([]string{"--host", "example.com", "file1", "file2"})
+//	args := fs.Args()  // Returns ["file1", "file2"]
+func (fs *FlagSet) Args() []string {
+	if fs.args == nil {
+		return []string{}
+	}
+	// Return a copy to prevent external modification
+	result := make([]string, len(fs.args))
+	copy(result, fs.args)
+	return result
+}
+
+// NArg returns the number of remaining non-flag arguments after parsing.
+// Equivalent to len(fs.Args()).
+//
+// Example:
+//
+//	fs := flashflags.New("myapp")
+//	_ = fs.Parse([]string{"file1", "file2"})
+//	count := fs.NArg()  // Returns 2
+func (fs *FlagSet) NArg() int {
+	return len(fs.args)
+}
+
+// Arg returns the i'th remaining argument. Arg(0) is the first remaining argument
+// after flags have been processed. Arg returns an empty string if the
+// requested element does not exist.
+//
+// Example:
+//
+//	fs := flashflags.New("myapp")
+//	_ = fs.Parse([]string{"file1", "file2"})
+//	first := fs.Arg(0)   // Returns "file1"
+//	second := fs.Arg(1)  // Returns "file2"
+//	third := fs.Arg(2)   // Returns ""
+func (fs *FlagSet) Arg(i int) string {
+	if i < 0 || i >= len(fs.args) {
+		return ""
+	}
+	return fs.args[i]
+}
+
 func (fs *FlagSet) PrintHelp() {
 	fmt.Print(fs.Help())
 }

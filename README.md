@@ -14,7 +14,7 @@ FlashFlags is an ultra-fast, zero-dependency, lock-free command-line flag parsin
 ## Features
 
 - **Ultra-Fast**: Zero-allocation parsing with optimized performance
-- **Zero Dependencies**: Uses only Go standard library
+- **Zero Dependencies**: Can be use as drop-in stdlib replacement
 - **Lock-Free**: Thread-safe operations without locks
 - **Configuration Files**: JSON config file support with auto-discovery
 - **Environment Variables**: Automatic environment variable integration
@@ -29,41 +29,9 @@ FlashFlags is an ultra-fast, zero-dependency, lock-free command-line flag parsin
 
 FlashFlags is designed for Go 1.23+ environments and follows Long-Term Support guidelines to ensure consistent performance across production deployments.
 
-## Flag Syntax
-
-FlashFlags supports comprehensive POSIX/GNU-style flag syntax for maximum compatibility:
-
-### Long Flags
-```bash
---flag value          # Space-separated value
---flag=value          # Equals-separated value  
---boolean-flag        # Boolean without value (true)
---boolean-flag=false  # Explicit boolean value
-```
-
-### Short Flags
-```bash
--f value              # Space-separated value
--f=value              # Equals-separated value (NEW!)
--b                    # Boolean short flag (true)
--b=false              # Explicit boolean value
-```
-
-### Combined Short Flags (NEW!)
-```bash
--abc                  # Equivalent to -a -b -c (all boolean)
--abc value            # Last flag gets the value: -a -b -c value
--vdp 8080             # Verbose + debug + port: -v -d -p 8080
-```
-
-**Rules for combined flags:**
-- All flags except the last must be boolean
-- The last flag can be any type and consumes the next argument
-- Example: `-vhp 3000` sets verbose=true, help=true, port=3000
-
 ## Performance
 
-FlashFlags is designed for maximum performance, offering practically identical performance to Go's standard library with a lot of additional features:
+FlashFlags delivers exceptional performance with zero-allocation parsing:
 
 ```
 AMD Ryzen 5 7520U with Radeon Graphics
@@ -145,20 +113,69 @@ MYAPP_HOST=api.example.com ./myapp -p=3000 --verbose
 ./myapp --help
 ```
 
-## Why FlashFlags?
+### Flag Syntax
 
-FlashFlags offers a clean, feature-rich API with solid performance and zero external dependencies. Perfect for applications that need advanced flag features without the complexity of large CLI frameworks.
+FlashFlags supports comprehensive POSIX/GNU-style flag syntax for maximum compatibility:
 
-### Key Advantages
+### Long Flags
+```bash
+--flag value          # Space-separated value
+--flag=value          # Equals-separated value  
+--boolean-flag        # Boolean without value (true)
+--boolean-flag=false  # Explicit boolean value
+```
 
-- **Fast Parsing**: Optimized for real-world flag parsing scenarios
-- **Zero Dependencies**: Uses only Go standard library
-- **Memory Efficient**: Reasonable allocation profile for complex parsing
-- **Thread Safe**: Lock-free concurrent operations
+### Short Flags
+```bash
+-f value              # Space-separated value
+-f=value              # Equals-separated value (NEW!)
+-b                    # Boolean short flag (true)
+-b=false              # Explicit boolean value
+```
 
-## Demo
+### Combined Short Flags
+```bash
+-abc                  # Equivalent to -a -b -c (all boolean)
+-abc value            # Last flag gets the value: -a -b -c value
+-vdp 8080             # Verbose + debug + port: -v -d -p 8080
+```
 
-- **[Demo Examples](demo/)** - Real-world examples and integrations
+**Rules for combined flags:**
+- All flags except the last must be boolean
+- The last flag can be any type and consumes the next argument
+- Example: `-vhp 3000` sets verbose=true, help=true, port=3000
+
+### Drop-in Stdlib Replacement
+
+Flash-flags includes a complete drop-in replacement for Go's standard `flag` package. Migrate with zero code changes:
+
+```go
+// Before - using stdlib
+import "flag"
+
+// After - using flash-flags
+import "github.com/antonio-giordano/flash-flags/stdlib/flag"
+
+// All your existing code works unchanged!
+var name = flag.String("name", "default", "description")
+var count = flag.Int("count", 42, "number of items")
+
+func main() {
+    flag.Parse()
+    fmt.Printf("Name: %s, Count: %d\n", *name, *count)
+    
+    // Full remaining arguments support
+    for i := 0; i < flag.NArg(); i++ {
+        fmt.Printf("Arg[%d]: %s\n", i, flag.Arg(i))
+    }
+}
+```
+
+See the [stdlib example](examples/stdlib-drop-in/) for a complete working demonstration.
+
+## Examples
+
+- **[Examples](examples/)** - Real-world examples and integrations
 
 ## Supported Flag Types
 
