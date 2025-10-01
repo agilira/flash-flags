@@ -110,24 +110,24 @@ func parseArguments(fs *flashflags.FlagSet) {
 			os.Exit(0) // Help was shown
 		}
 
-		fmt.Printf("❌ Configuration Error: %v\n\n", err)
-		fmt.Println("💡 Run with --help to see all available options")
+		fmt.Printf("Configuration Error: %v\n\n", err)
+		fmt.Println("Run with --help to see all available options")
 		os.Exit(1)
 	}
 }
 
 // displayConfiguration shows the final configuration
 func displayConfiguration(flags *flagPointers) {
-	fmt.Println("✅ All required flags provided successfully!")
+	fmt.Println("All required flags provided successfully!")
 	fmt.Println()
-	fmt.Println("🚀 Starting application with configuration:")
+	fmt.Println("Starting application with configuration:")
 
 	displayServerConfig(flags)
 	displayTLSConfig(flags)
 	displayDatabaseConfig(flags)
 
 	fmt.Println()
-	fmt.Println("🎯 Application would start here with the provided configuration!")
+	fmt.Println("Application would start here with the provided configuration!")
 }
 
 // displayServerConfig shows server-related configuration
@@ -139,11 +139,11 @@ func displayServerConfig(flags *flagPointers) {
 // displayTLSConfig shows TLS-related configuration
 func displayTLSConfig(flags *flagPointers) {
 	if *flags.enableTLS {
-		fmt.Printf("   TLS Enabled: ✅\n")
+		fmt.Printf("   TLS Enabled: \n")
 		fmt.Printf("   TLS Cert: %s\n", *flags.tlsCert)
 		fmt.Printf("   TLS Key: %s\n", *flags.tlsKey)
 	} else {
-		fmt.Printf("   TLS Enabled: ❌\n")
+		fmt.Printf("   TLS Enabled: \n")
 	}
 }
 

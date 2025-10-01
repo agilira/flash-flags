@@ -72,9 +72,9 @@ fs.SetDependencies("tls-key", "enable-tls")
 FlashFlags provides clear error messages for validation failures:
 
 ```
-❌ Configuration Error: required flag --api-key not provided
+Configuration Error: required flag --api-key not provided
 
-💡 Run with --help to see all available options
+Run with --help to see all available options
 ```
 
 ## Security Features

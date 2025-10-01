@@ -1,4 +1,4 @@
-// flash-flags/demo/help: Ultra-fast command-line flag parsing for Go - help flags example
+// flash-flags/demo/basic: Ultra-fast command-line flag parsing for Go - basic example
 //
 // Copyright (c) 2025 AGILira - A. Giordano
 // Series: an AGILira library
@@ -12,14 +12,6 @@ import (
 
 	flashflags "github.com/agilira/flash-flags"
 )
-
-// maskPassword masks a password for display
-func maskPassword(password string) string {
-	if password == "" {
-		return ""
-	}
-	return "***"
-}
 
 func main() {
 	fs := flashflags.New("webserver")
@@ -38,7 +30,7 @@ func main() {
 	dbPort := fs.Int("db-port", 5432, "Database port")
 	dbName := fs.String("db-name", "app", "Database name")
 	dbUser := fs.String("db-user", "", "Database user")
-	dbPass := fs.String("db-password", "", "Database password")
+	_ = fs.String("db-password", "", "Database password")
 
 	// Logging configuration group
 	logLevel := fs.String("log-level", "info", "Log level (debug, info, warn, error)")
@@ -173,14 +165,14 @@ func main() {
 	}
 
 	if err := fs.Parse(args); err != nil {
-		fmt.Printf("❌ Parse error: %v\n", err)
+		fmt.Printf("Parse error: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("✅ Configuration parsed successfully!\n")
+	fmt.Printf("Configuration parsed successfully!\n")
 	fmt.Printf("   Server: %s:%d (SSL: %t)\n", *host, *port, *ssl)
 	fmt.Printf("   SSL Cert: %s, Key: %s\n", *certFile, *keyFile)
-	fmt.Printf("   Database: %s:%s@%s:%d/%s\n", *dbUser, maskPassword(*dbPass), *dbHost, *dbPort, *dbName)
+	fmt.Printf("   Database: %s@%s:%d/%s\n", *dbUser, *dbHost, *dbPort, *dbName)
 	fmt.Printf("   Logging: level=%s, verbose=%t\n", *logLevel, *verbose)
 
 	if *logFile != "" {
