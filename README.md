@@ -30,7 +30,7 @@ FlashFlags is an ultra-fast, zero-dependency, lock-free command-line flag parsin
 
 ### Security Features
 
-Flash-flags is the **only** Go flag library with comprehensive security hardening:
+Flash-flags provides comprehensive security hardening:
 
 - **Command Injection Protection**: Blocks `$(...)`, backticks, and shell metacharacters
 - **Path Traversal Prevention**: Prevents `../` and `..\\` directory traversal attacks  
@@ -58,7 +58,6 @@ BenchmarkGoFlags-8           147,394   7460 ns/op    5620 B/op    61 allocs/op
 BenchmarkKingpin-8           150,154   7567 ns/op    6504 B/op    97 allocs/op  
 ```
 
-**Flash-flags is 85% as fast as stdlib with FULL security hardening**  
 **Only 132ns overhead for complete protection against injection attacks**
 
 **Reproduce benchmarks**:
