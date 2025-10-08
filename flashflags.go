@@ -1057,9 +1057,20 @@ func (fs *FlagSet) validateSecurityConstraintsSlow(name, value string) error {
 
 	// Critical patterns only (most dangerous)
 	if strings.Contains(lowerValue, "$(") || strings.Contains(value, "`") ||
-		strings.Contains(lowerValue, "rm -rf") || strings.Contains(lowerValue, "/etc/passwd") ||
-		strings.Contains(lowerValue, "drop table") || strings.Contains(value, "%n") {
+		strings.Contains(lowerValue, "rm -rf") || strings.Contains(lowerValue, "/etc/") ||
+		strings.Contains(lowerValue, "/proc/") || strings.Contains(lowerValue, "/sys/") ||
+		strings.Contains(lowerValue, "drop table") {
 		return fmt.Errorf("flag --%s contains dangerous pattern", name)
+	}
+
+	// Check for format string attacks (case insensitive)
+	for i := 0; i < len(value)-1; i++ {
+		if value[i] == '%' {
+			next := strings.ToLower(string(value[i+1]))
+			if next == "n" || next == "s" || next == "x" || next == "d" || next == "c" || next == "p" {
+				return fmt.Errorf("flag --%s contains format string pattern", name)
+			}
+		}
 	}
 
 	// Windows device names (only check if short enough)

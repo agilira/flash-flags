@@ -102,7 +102,7 @@ func FuzzParse(f *testing.F) {
 		config := fs.String("config", "", "Config file path")
 
 		// Add validator to test validation fuzzing
-		fs.SetValidator("port", func(val interface{}) error {
+		_ = fs.SetValidator("port", func(val interface{}) error {
 			p := val.(int)
 			if p < 0 || p > 65535 {
 				return nil // Return nil to avoid expected validation failures in fuzzing
@@ -391,13 +391,13 @@ func FuzzEnvironmentVariables(f *testing.F) {
 		originalValue := os.Getenv(envKey)
 		defer func() {
 			if originalValue != "" {
-				os.Setenv(envKey, originalValue)
+				_ = os.Setenv(envKey, originalValue)
 			} else {
-				os.Unsetenv(envKey)
+				_ = os.Unsetenv(envKey)
 			}
 		}()
 
-		os.Setenv(envKey, envValue)
+		_ = os.Setenv(envKey, envValue)
 
 		defer func() {
 			if r := recover(); r != nil {
@@ -459,7 +459,7 @@ func FuzzFlagValidation(f *testing.F) {
 		host := fs.String("host", "localhost", "Server host")
 
 		// Add a validator that could be vulnerable
-		fs.SetValidator("host", func(val interface{}) error {
+		_ = fs.SetValidator("host", func(val interface{}) error {
 			// Ensure validator doesn't panic with any input
 			defer func() {
 				if r := recover(); r != nil {

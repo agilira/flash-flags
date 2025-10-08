@@ -355,14 +355,14 @@ func BenchmarkLoadEnvironmentVariables_Few(b *testing.B) {
 	backup := make(map[string]string)
 	for key, value := range testVars {
 		backup[key] = os.Getenv(key)
-		os.Setenv(key, value)
+		_ = os.Setenv(key, value)
 	}
 	defer func() {
 		for key, value := range backup {
 			if value != "" {
-				os.Setenv(key, value)
+				_ = os.Setenv(key, value)
 			} else {
-				os.Unsetenv(key)
+				_ = os.Unsetenv(key)
 			}
 		}
 	}()
@@ -402,7 +402,7 @@ func BenchmarkValidation_Simple(b *testing.B) {
 		port := fs.Int("port", 8080, "Port")
 
 		// Add simple validators
-		fs.SetValidator("host", func(val interface{}) error {
+		_ = fs.SetValidator("host", func(val interface{}) error {
 			h := val.(string)
 			if len(h) == 0 {
 				return nil // Don't fail in benchmark
@@ -410,7 +410,7 @@ func BenchmarkValidation_Simple(b *testing.B) {
 			return nil
 		})
 
-		fs.SetValidator("port", func(val interface{}) error {
+		_ = fs.SetValidator("port", func(val interface{}) error {
 			p := val.(int)
 			if p <= 0 || p > 65535 {
 				return nil // Don't fail in benchmark
@@ -446,7 +446,7 @@ func BenchmarkValidation_Complex(b *testing.B) {
 		tags := fs.StringSlice("tags", []string{}, "Tags")
 
 		// Add security-focused validators
-		fs.SetValidator("config", func(val interface{}) error {
+		_ = fs.SetValidator("config", func(val interface{}) error {
 			path := val.(string)
 			// Simulate path validation (security check)
 			if strings.Contains(path, "..") {
@@ -458,7 +458,7 @@ func BenchmarkValidation_Complex(b *testing.B) {
 			return nil
 		})
 
-		fs.SetValidator("host", func(val interface{}) error {
+		_ = fs.SetValidator("host", func(val interface{}) error {
 			h := val.(string)
 			// Simulate hostname validation
 			if len(h) > 253 {
@@ -470,7 +470,7 @@ func BenchmarkValidation_Complex(b *testing.B) {
 			return nil
 		})
 
-		fs.SetValidator("tags", func(val interface{}) error {
+		_ = fs.SetValidator("tags", func(val interface{}) error {
 			tagList := val.([]string)
 			// Simulate tag validation
 			if len(tagList) > 100 {
@@ -558,7 +558,7 @@ func BenchmarkSecurityOverhead_Minimal(b *testing.B) {
 			input := fs.String("input", "", "Input value")
 
 			// Add minimal security validation
-			fs.SetValidator("input", func(val interface{}) error {
+			_ = fs.SetValidator("input", func(val interface{}) error {
 				s := val.(string)
 				if len(s) > 10000 {
 					return nil // Don't fail in benchmark
