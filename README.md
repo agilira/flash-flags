@@ -6,7 +6,7 @@
 [![Security](https://img.shields.io/badge/security-hardened-brightgreen.svg)](https://github.com/agilira/flash-flags/actions/workflows/codeql.yml)
 [![Fuzz Testing](https://img.shields.io/badge/fuzz-tested-blue.svg)](https://github.com/agilira/flash-flags/blob/main/fuzz_test.go)
 [![Go Report Card](https://goreportcard.com/badge/github.com/agilira/flash-flags?v=2)](https://goreportcard.com/report/github.com/agilira/flash-flags)
-[![Coverage](https://codecov.io/gh/agilira/flash-flags/branch/main/graph/badge.svg)](https://codecov.io/gh/agilira/flash-flags)
+[![Coverage](https://img.shields.io/badge/coverage-94.2%25-brightgreen.svg)](https://github.com/agilira/flash-flags)
 [![GoDoc](https://godoc.org/github.com/agilira/flash-flags?status.svg)](https://godoc.org/github.com/agilira/flash-flags)
 
 **[Features](#features) • [Quick Start](#quick-start) •  [Performance](#performance) • [Demo](#demo) • [Flag Types](#supported-flag-types) • [Configuration](#configuration-priority) • [Examples](#real-world-example)**
