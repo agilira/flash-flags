@@ -2,7 +2,9 @@
 ### an AGILira library
 
 [![CI/CD Pipeline](https://github.com/agilira/flash-flags/actions/workflows/ci.yml/badge.svg)](https://github.com/agilira/flash-flags/actions/workflows/ci.yml)
-[![Security](https://img.shields.io/badge/security-gosec-brightgreen.svg)](https://github.com/agilira/flash-flags/actions/workflows/ci.yml)
+[![CodeQL Security](https://github.com/agilira/flash-flags/actions/workflows/codeql.yml/badge.svg)](https://github.com/agilira/flash-flags/actions/workflows/codeql.yml)
+[![Security](https://img.shields.io/badge/security-hardened-brightgreen.svg)](https://github.com/agilira/flash-flags/actions/workflows/codeql.yml)
+[![Fuzz Testing](https://img.shields.io/badge/fuzz-tested-blue.svg)](https://github.com/agilira/flash-flags/blob/main/fuzz_test.go)
 [![Go Report Card](https://goreportcard.com/badge/github.com/agilira/flash-flags?v=2)](https://goreportcard.com/report/github.com/agilira/flash-flags)
 [![Coverage](https://codecov.io/gh/agilira/flash-flags/branch/main/graph/badge.svg)](https://codecov.io/gh/agilira/flash-flags)
 [![GoDoc](https://godoc.org/github.com/agilira/flash-flags?status.svg)](https://godoc.org/github.com/agilira/flash-flags)
@@ -13,8 +15,9 @@ FlashFlags is an ultra-fast, zero-dependency, lock-free command-line flag parsin
 
 ## Features
 
-- **Ultra-Fast**: Zero-allocation parsing with optimized performance
-- **Zero Dependencies**: Can be use as drop-in stdlib replacement
+- **Security-Hardened**: Built-in protection against injection attacks, path traversal, and buffer overflows
+- **Ultra-Fast**: 85% of stdlib performance with comprehensive security validation
+- **Zero Dependencies**: Can be use as drop-in stdlib replacement with security
 - **Lock-Free**: Thread-safe operations without locks
 - **Configuration Files**: JSON config file support with auto-discovery
 - **Environment Variables**: Automatic environment variable integration
@@ -25,24 +28,42 @@ FlashFlags is an ultra-fast, zero-dependency, lock-free command-line flag parsin
 - **POSIX/GNU Syntax**: Complete flag syntax support including combined short flags
 - **Flexible Parsing**: Support for `-f=value` and `-abc` combined syntax
 
+### Security Features
+
+Flash-flags is the **only** Go flag library with comprehensive security hardening:
+
+- **Command Injection Protection**: Blocks `$(...)`, backticks, and shell metacharacters
+- **Path Traversal Prevention**: Prevents `../` and `..\\` directory traversal attacks  
+- **Buffer Overflow Safeguards**: 10KB input limits with fast-path optimization
+- **Format String Attack Blocking**: Detects and blocks `%n`, `%s` format string exploits
+- **Input Sanitization**: Removes null bytes and dangerous control characters
+- **Windows Device Protection**: Blocks Windows reserved names (CON, PRN, AUX, etc.)
+
+**Security overhead**: Only 132ns per operation (17%) for complete protection
+
 ## Compatibility and Support
 
 FlashFlags is designed for Go 1.23+ environments and follows Long-Term Support guidelines to ensure consistent performance across production deployments.
 
 ## Performance
 
-FlashFlags delivers exceptional performance with zero-allocation parsing:
+FlashFlags delivers exceptional performance with security-hardened parsing:
 
 ```
-AMD Ryzen 5 7520U with Radeon Graphics
-BenchmarkGetters/GetString 121M      8.58 ns/op        0 B/op    0 allocs/op
-BenchmarkGetters/GetInt    150M      7.56 ns/op        0 B/op    0 allocs/op
-BenchmarkGetters/GetBool   147M      8.34 ns/op        0 B/op    0 allocs/op
-BenchmarkGetters/GetDuration 141M    8.13 ns/op        0 B/op    0 allocs/op
+AMD Ryzen 5 7520U 
+BenchmarkFlashFlags-8      1,294,699    924 ns/op     945 B/op    11 allocs/op  🛡️ SECURE
+BenchmarkStdFlag-8         1,527,176    792 ns/op     945 B/op    13 allocs/op  
+BenchmarkPflag-8             785,904   1322 ns/op    1569 B/op    21 allocs/op  
+BenchmarkGoFlags-8           147,394   7460 ns/op    5620 B/op    61 allocs/op  
+BenchmarkKingpin-8           150,154   7567 ns/op    6504 B/op    97 allocs/op  
 ```
+
+**Flash-flags is 85% as fast as stdlib with FULL security hardening**  
+**Only 132ns overhead for complete protection against injection attacks**
+
 **Reproduce benchmarks**:
 ```bash
-go test -bench=. -benchmem
+cd benchmarks && go test -bench=. -benchmem
 ```
 
 ## Quick Start

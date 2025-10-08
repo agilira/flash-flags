@@ -935,6 +935,19 @@ func (fs *FlagSet) setFloat64Value(flag *Flag, value, name string) error {
 
 func (fs *FlagSet) setStringSliceValue(flag *Flag, value string) error {
 	slice := fs.parseStringSlice(value)
+
+	// Apply security validation to each item in the slice
+	for i, item := range slice {
+		if err := fs.validateSecurityConstraints(flag.name+"["+strconv.Itoa(i)+"]", item); err != nil {
+			return fmt.Errorf("string slice item validation failed: %v", err)
+		}
+	}
+
+	// Additional validation for slice size (DoS protection)
+	if len(slice) > 10000 {
+		return fmt.Errorf("string slice too large: %d items (max: 10000)", len(slice))
+	}
+
 	flag.value = slice
 	fs.updateStringSlicePointer(flag, slice)
 	return nil
@@ -988,10 +1001,90 @@ func (fs *FlagSet) updateStringSlicePointer(flag *Flag, slice []string) {
 	}
 }
 
+// validateSecurityConstraints validates input values against common security threats
+// Optimized version - fast path for common safe inputs
+func (fs *FlagSet) validateSecurityConstraints(name, value string) error {
+	// Fast path: length check first (most common case)
+	valueLen := len(value)
+	if valueLen > 10000 {
+		return fmt.Errorf("flag --%s value too long: %d chars (max: 10000)", name, valueLen)
+	}
+
+	// Fast path: empty or very short values are usually safe
+	if valueLen == 0 {
+		return nil
+	}
+
+	// Fast path: simple alphanumeric values are safe
+	if valueLen < 100 && isSimpleAlphanumeric(value) {
+		return nil
+	}
+
+	// Comprehensive checks for potentially dangerous values
+	return fs.validateSecurityConstraintsSlow(name, value)
+}
+
+// isSimpleAlphanumeric checks if a string contains only safe characters
+func isSimpleAlphanumeric(s string) bool {
+	for _, r := range s {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' || r == ':') {
+			return false
+		}
+	}
+	return true
+}
+
+// validateSecurityConstraintsSlow performs comprehensive security validation
+func (fs *FlagSet) validateSecurityConstraintsSlow(name, value string) error {
+	// Check for null bytes and dangerous control characters in one pass
+	for i, r := range value {
+		if r == '\x00' {
+			return fmt.Errorf("flag --%s contains null byte at position %d", name, i)
+		}
+		if r < 32 && r != '\t' && r != '\n' && r != '\r' {
+			return fmt.Errorf("flag --%s contains control character: \\x%02x", name, r)
+		}
+	}
+
+	// Path traversal check
+	if strings.Contains(value, "../") || strings.Contains(value, "..\\") {
+		return fmt.Errorf("flag --%s contains path traversal sequence", name)
+	}
+
+	// Combined pattern check for efficiency
+	lowerValue := strings.ToLower(value)
+
+	// Critical patterns only (most dangerous)
+	if strings.Contains(lowerValue, "$(") || strings.Contains(value, "`") ||
+		strings.Contains(lowerValue, "rm -rf") || strings.Contains(lowerValue, "/etc/passwd") ||
+		strings.Contains(lowerValue, "drop table") || strings.Contains(value, "%n") {
+		return fmt.Errorf("flag --%s contains dangerous pattern", name)
+	}
+
+	// Windows device names (only check if short enough)
+	if len(value) < 10 {
+		upperValue := strings.ToUpper(value)
+		if upperValue == "CON" || upperValue == "PRN" || upperValue == "AUX" || upperValue == "NUL" ||
+			strings.HasPrefix(upperValue, "COM") || strings.HasPrefix(upperValue, "LPT") {
+			return fmt.Errorf("flag --%s matches Windows device name", name)
+		}
+	}
+
+	return nil
+}
+
 func (fs *FlagSet) setFlagValue(name, value string) error {
 	flag, exists := fs.flags[name]
 	if !exists {
 		return fmt.Errorf("unknown flag: --%s", name)
+	}
+
+	// Apply security validation before processing the value (optimized path)
+	if len(value) > 0 && (len(value) > 100 || !isSimpleAlphanumeric(value)) {
+		if err := fs.validateSecurityConstraints(name, value); err != nil {
+			return err
+		}
 	}
 
 	if err := fs.setFlagValueByType(flag, value, name); err != nil {
@@ -2210,10 +2303,20 @@ func (fs *FlagSet) setFlagValueFromConfig(name string, value interface{}) error 
 		return fmt.Errorf("unknown flag: %s", name)
 	}
 
+	// Apply security validation for string values from config
+	if strValue, ok := value.(string); ok {
+		if err := fs.validateSecurityConstraints(name, strValue); err != nil {
+			return fmt.Errorf("config security validation failed: %v", err)
+		}
+	}
+
 	// Set value based on type using dedicated functions
 	if err := fs.setConfigValueByType(flag, value, name); err != nil {
 		return err
 	}
+
+	// Mark flag as changed since it was loaded from config
+	flag.changed = true
 
 	// Validate the value if validator is set
 	return fs.validateFlagValue(flag)

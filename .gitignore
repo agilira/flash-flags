@@ -54,6 +54,7 @@ demo/*/*.log
 # Test artifacts
 testdata/output/
 *.prof
+testdata/
 
 # Local development
 .env

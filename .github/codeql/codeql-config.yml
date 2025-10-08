@@ -1,0 +1,44 @@
+name: "Flash-flags Security Analysis"
+disable-default-queries: false
+queries:
+  - name: "Default CodeQL Security Queries"
+    uses: security-and-quality
+  
+  # Custom flash-flags specific security queries
+  - name: "Flash-flags Command Injection"
+    uses: ./.github/codeql/queries/CommandInjection.ql
+    
+  - name: "Flash-flags Path Traversal"  
+    uses: ./.github/codeql/queries/PathTraversal.ql
+    
+  - name: "Flash-flags Buffer Overflow"
+    uses: ./.github/codeql/queries/BufferOverflow.ql
+
+packs:
+  - "codeql/go-queries"
+  
+# Additional configuration for Go-specific analysis
+go:
+  # Include test files in analysis to catch security issues in test code
+  include-tests: true
+  
+  # Focus on these critical security areas
+  security-focus:
+    - "injection"
+    - "path-traversal" 
+    - "buffer-overflow"
+    - "input-validation"
+    - "unsafe-reflection"
+
+# Custom file patterns to analyze
+paths:
+  - "flashflags.go"
+  - "fuzz_test.go"
+  - "security_benchmark_test.go"
+  - "examples/**/*.go"
+  
+# Exclude paths that don't need security analysis  
+paths-ignore:
+  - "testdata/**"
+  - "changelog/**"
+  - "**/*_generated.go"

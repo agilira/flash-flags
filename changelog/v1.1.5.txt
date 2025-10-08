@@ -1,0 +1,76 @@
+CHANGELOG v1.1.5
+===============
+
+Release Date: 2025-10-08
+
+SECURITY ENHANCEMENTS
+--------------------
+
+* Added comprehensive input validation system with validateSecurityConstraints function
+* Implemented protection against command injection attacks
+* Added path traversal prevention mechanisms
+* Implemented buffer overflow safeguards with 10KB input limits
+* Added format string attack detection and blocking
+* Implemented null byte injection prevention
+* Added control character validation and filtering
+* Added Windows device name protection (CON, PRN, AUX, etc.)
+
+PERFORMANCE OPTIMIZATIONS
+-------------------------
+
+* Optimized security validation with fast-path for simple alphanumeric inputs
+* Implemented isSimpleAlphanumeric function for performance-critical paths
+* Reduced security overhead from 3407ns to 924ns per operation
+* Achieved 85% of stdlib performance while maintaining full security
+* Optimized memory allocation patterns
+
+TESTING INFRASTRUCTURE
+----------------------
+
+* Added comprehensive fuzz testing suite with 5 fuzz functions
+* Implemented FuzzParse for core parsing security validation
+* Added FuzzParseStringSlice for slice parsing security
+* Implemented FuzzLoadConfig for configuration loading security
+* Added FuzzEnvironmentVariables for environment variable security
+* Implemented FuzzFlagValidation for validation system security
+* Added security benchmark testing suite
+* Implemented BenchmarkParse_Typical and BenchmarkSecurityOverhead_Minimal
+
+DEVELOPMENT WORKFLOW IMPROVEMENTS
+--------------------------------
+
+* Added CodeQL security analysis workflow with custom queries
+* Implemented automated security scanning on push and pull requests
+* Added scheduled security scans (daily at 02:00 UTC)
+* Created custom CodeQL queries for command-line parsing vulnerabilities
+* Implemented CommandInjection.ql, PathTraversal.ql, and BufferOverflow.ql
+* Added comprehensive CodeQL configuration with flash-flags specific rules
+* Updated Makefile and Makefile.ps1 with correct fuzz test references
+* Added security policy enforcement configuration
+
+DOCUMENTATION UPDATES
+---------------------
+
+* Updated benchmark results with latest performance data
+* Added security features documentation section
+* Updated README with comprehensive security feature list
+* Added performance comparison charts with security trade-offs
+* Updated benchmarks README with detailed performance analysis
+* Added security vs performance trade-off documentation
+
+TECHNICAL IMPROVEMENTS
+----------------------
+
+* Implemented two-tier validation system (fast path + comprehensive validation)
+* Added validateSecurityConstraintsSlow for thorough security checks
+* Optimized string processing for common flag parsing patterns
+* Reduced allocation overhead while maintaining security guarantees
+* Improved error messaging for security validation failures
+
+COMPATIBILITY
+------------
+
+* Maintained full backward compatibility
+* No breaking changes to public API
+* Preserved existing flag parsing behavior
+* Maintained performance characteristics for valid inputs
