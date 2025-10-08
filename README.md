@@ -2,7 +2,7 @@
 ### an AGILira library
 
 [![CI/CD Pipeline](https://github.com/agilira/flash-flags/actions/workflows/ci.yml/badge.svg)](https://github.com/agilira/flash-flags/actions/workflows/ci.yml)
-[![CodeQL Security](https://github.com/agilira/flash-flags/actions/workflows/codeql.yml/badge.svg)](https://github.com/agilira/flash-flags/actions/workflows/codeql.yml)
+[![CodeQL](https://github.com/agilira/flash-flags/actions/workflows/codeql.yml/badge.svg)](https://github.com/agilira/flash-flags/actions/workflows/codeql.yml)
 [![Security](https://img.shields.io/badge/security-gosec-brightgreen.svg)](https://github.com/agilira/flash-flags/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/agilira/flash-flags?v=2)](https://goreportcard.com/report/github.com/agilira/flash-flags)
 [![Coverage](https://img.shields.io/badge/coverage-94.2%25-brightgreen.svg)](https://github.com/agilira/flash-flags)
