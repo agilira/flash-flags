@@ -2719,3 +2719,87 @@ func TestEnvironmentVariableAdvanced(t *testing.T) {
 		}
 	})
 }
+
+// TestArgsParsing tests NArg and Arg functions for remaining arguments
+func TestArgsParsing(t *testing.T) {
+	t.Run("args with flags and remaining arguments", func(t *testing.T) {
+		fs := New("test")
+		fs.String("name", "", "Name flag")
+		fs.Bool("verbose", false, "Verbose flag")
+
+		args := []string{"--name", "john", "--verbose", "file1", "file2", "file3"}
+		err := fs.Parse(args)
+		if err != nil {
+			t.Fatalf("Parse failed: %v", err)
+		}
+
+		// Test NArg
+		if fs.NArg() != 3 {
+			t.Errorf("Expected 3 remaining args, got %d", fs.NArg())
+		}
+
+		// Test Arg
+		if fs.Arg(0) != "file1" {
+			t.Errorf("Expected Arg(0) = 'file1', got '%s'", fs.Arg(0))
+		}
+		if fs.Arg(1) != "file2" {
+			t.Errorf("Expected Arg(1) = 'file2', got '%s'", fs.Arg(1))
+		}
+		if fs.Arg(2) != "file3" {
+			t.Errorf("Expected Arg(2) = 'file3', got '%s'", fs.Arg(2))
+		}
+
+		// Test out of bounds
+		if fs.Arg(3) != "" {
+			t.Errorf("Expected Arg(3) = '', got '%s'", fs.Arg(3))
+		}
+		if fs.Arg(-1) != "" {
+			t.Errorf("Expected Arg(-1) = '', got '%s'", fs.Arg(-1))
+		}
+	})
+
+	t.Run("no remaining arguments", func(t *testing.T) {
+		fs := New("test")
+		fs.String("name", "", "Name flag")
+
+		args := []string{"--name", "john"}
+		err := fs.Parse(args)
+		if err != nil {
+			t.Fatalf("Parse failed: %v", err)
+		}
+
+		// Test NArg with no remaining args
+		if fs.NArg() != 0 {
+			t.Errorf("Expected 0 remaining args, got %d", fs.NArg())
+		}
+
+		// Test Arg with no remaining args
+		if fs.Arg(0) != "" {
+			t.Errorf("Expected Arg(0) = '', got '%s'", fs.Arg(0))
+		}
+	})
+
+	t.Run("only remaining arguments", func(t *testing.T) {
+		fs := New("test")
+		fs.String("name", "default", "Name flag")
+
+		args := []string{"arg1", "arg2"}
+		err := fs.Parse(args)
+		if err != nil {
+			t.Fatalf("Parse failed: %v", err)
+		}
+
+		// Test NArg
+		if fs.NArg() != 2 {
+			t.Errorf("Expected 2 remaining args, got %d", fs.NArg())
+		}
+
+		// Test Args
+		if fs.Arg(0) != "arg1" {
+			t.Errorf("Expected Arg(0) = 'arg1', got '%s'", fs.Arg(0))
+		}
+		if fs.Arg(1) != "arg2" {
+			t.Errorf("Expected Arg(1) = 'arg2', got '%s'", fs.Arg(1))
+		}
+	})
+}
