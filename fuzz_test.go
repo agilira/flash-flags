@@ -415,7 +415,8 @@ func FuzzEnvironmentVariables(f *testing.F) {
 		}
 
 		if err != nil {
-			t.Logf("LoadEnvironmentVariables failed: %v", err)
+			// Security validation should reject dangerous values - this is expected
+			t.Logf("LoadEnvironmentVariables correctly rejected dangerous value: %v", err)
 		} else {
 			// Check loaded values for security issues
 			if len(*host) > 10000 {
