@@ -8,9 +8,25 @@
 [![Coverage](https://img.shields.io/badge/coverage-94.2%25-brightgreen.svg)](https://github.com/agilira/flash-flags)
 [![GoDoc](https://godoc.org/github.com/agilira/flash-flags?status.svg)](https://godoc.org/github.com/agilira/flash-flags)
 
-**[Features](#features) • [Quick Start](#quick-start) •  [Performance](#performance) • [Demo](#demo) • [Flag Types](#supported-flag-types) • [Configuration](#configuration-priority) • [Examples](#real-world-example)**
-
 FlashFlags is an ultra-fast, zero-dependency, lock-free command-line flag parsing library for Go. Originally built for [Argus](https://github.com/agilira/argus), it provides great performance while maintaining simplicity and ease of use. FlashFlags serves as the core parsing engine for our CLI framework [Orpheus](https://github.com/agilira/orpheus).
+
+## Live Demo
+
+<div align="center">
+
+See Flash-Flags in action - POSIX-compliant stdlib replacement with JSON config support:
+
+<picture>
+  <source media="(max-width: 768px)" srcset="https://asciinema.org/a/0eI8yujnZpbi08UlsObi9twVj.svg" width="100%">
+  <source media="(max-width: 1024px)" srcset="https://asciinema.org/a/0eI8yujnZpbi08UlsObi9twVj.svg" width="90%">
+  <img src="https://asciinema.org/a/0eI8yujnZpbi08UlsObi9twVj.svg" alt="Flash-Flags CLI Demo" style="max-width: 100%; height: auto;" width="800">
+</picture>
+
+*[Click to view interactive demo](https://asciinema.org/a/0eI8yujnZpbi08UlsObi9twVj)*
+
+</div>
+
+**[Features](#features) • [Quick Start](#quick-start) • [Performance](#performance) • [Demo](#demo) • [Flag Types](#supported-flag-types) • [Configuration](#configuration-priority) • [Examples](#real-world-example)**
 
 ## Features
 

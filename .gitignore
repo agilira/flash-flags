@@ -62,3 +62,8 @@ testdata/
 .env.development
 .env.test
 .env.production
+
+# Demo and recording files
+*.cast
+demo-script.sh
+RECORDING.md
