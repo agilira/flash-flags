@@ -46,6 +46,7 @@ coverage.out
 # Demo generated files
 demo/*/demo-config.json
 demo/*/*.log
+demo-script.sh
 
 # Build artifacts
 /build/
