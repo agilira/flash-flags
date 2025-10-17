@@ -7,6 +7,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/agilira/flash-flags?v=2)](https://goreportcard.com/report/github.com/agilira/flash-flags)
 [![Coverage](https://img.shields.io/badge/coverage-94.2%25-brightgreen.svg)](https://github.com/agilira/flash-flags)
 [![GoDoc](https://godoc.org/github.com/agilira/flash-flags?status.svg)](https://godoc.org/github.com/agilira/flash-flags)
+[![Mentioned in Awesome Go](https://awesome.re/mentioned-badge.svg)](https://github.com/avelino/awesome-go)
 
 FlashFlags is an ultra-fast, zero-dependency, lock-free command-line flag parsing library for Go. Originally built for [Argus](https://github.com/agilira/argus), it provides great performance while maintaining simplicity and ease of use. FlashFlags serves as the core parsing engine for our CLI framework [Orpheus](https://github.com/agilira/orpheus).
 
