@@ -68,3 +68,7 @@ go build -o config
 ```
 
 The example will create a sample `demo-config.json` file to demonstrate the functionality.
+
+---
+
+flash-flags • an AGILira library

@@ -83,3 +83,7 @@ flash-flags maintains superior performance while providing full POSIX/GNU syntax
 - Only the last flag in a combined sequence can accept a value
 - Equals assignment works with both short (`-f=`) and long (`--flag=`) flags
 - Full compatibility with POSIX and GNU flag parsing conventions
+
+---
+
+flash-flags • an AGILira library

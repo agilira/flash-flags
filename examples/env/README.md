@@ -77,3 +77,7 @@ go run main.go
 go build -o env
 ./env
 ```
+
+---
+
+flash-flags • an AGILira library

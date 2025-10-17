@@ -1,4 +1,4 @@
-// flash-flags/demo/env: Ultra-fast command-line flag parsing for Go - env example
+// main.go: demo app using env variables for configuration
 //
 // Copyright (c) 2025 AGILira - A. Giordano
 // Series: an AGILira library

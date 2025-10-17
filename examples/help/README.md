@@ -100,3 +100,7 @@ Examples:
 go build -o help
 ./help --help
 ```
+
+---
+
+flash-flags • an AGILira library

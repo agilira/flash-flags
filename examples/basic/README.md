@@ -59,3 +59,7 @@ The example shows proper error handling and user-friendly validation messages.
 go build -o basic
 ./basic --help
 ```
+
+---
+
+flash-flags • an AGILira library

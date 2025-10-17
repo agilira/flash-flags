@@ -93,3 +93,7 @@ This pattern is common in production applications where:
 - Different deployment environments have different requirements
 
 The required flags feature ensures your application fails fast with clear error messages rather than running with incomplete configuration.
+
+---
+
+flash-flags • an AGILira library

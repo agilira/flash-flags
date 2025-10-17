@@ -115,24 +115,12 @@ go run main.go -h example.com -p 9000 -dv
 # With environment variables
 MYAPP_HOST=remote go run main.go
 ```
-
-## Benefits Summary
-
-| Feature | stdlib `flag` | `flash-flags/stdlib` |
-|---------|---------------|----------------------|
-| API Compatibility | ✅ | ✅ |
-| Performance | Baseline | **1.5x faster** |
-| Short Flags | ❌ | ✅ `-h`, `-p` |
-| Combined Flags | ❌ | ✅ `-vd` |
-| Config Files | ❌ | ✅ YAML/JSON/TOML |
-| Environment Vars | ❌ | ✅ Auto lookup |
-| Validation | ❌ | ✅ Custom validators |
-| Help Output | Basic | ✅ Professional |
-| Remaining Args | ✅ | ✅ |
-| Zero Dependencies | ❌ | ✅ |
-
 ## Migration Guarantee
 
 This package provides 100% API compatibility with Go's standard library `flag` package. Any code that works with `flag` will work with `flash-flags/stdlib` without modifications.
 
 The only difference is enhanced performance and optional advanced features that you can adopt gradually.
+
+---
+
+flash-flags • an AGILira library

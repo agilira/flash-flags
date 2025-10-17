@@ -1,3 +1,9 @@
+// main.go: Demonstrates advanced flag syntax using flash-flags
+//
+// Copyright (c) 2025 AGILira - A. Giordano
+// Series: an AGILira library
+// SPDX-License-Identifier: MPL-2.0
+
 package main
 
 import (

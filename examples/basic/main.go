@@ -1,4 +1,4 @@
-// flash-flags/demo/basic: Ultra-fast command-line flag parsing for Go - basic example
+// main.go: Demonstrates advanced flag syntax using flash-flags
 //
 // Copyright (c) 2025 AGILira - A. Giordano
 // Series: an AGILira library

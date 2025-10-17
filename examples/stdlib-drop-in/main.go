@@ -1,6 +1,12 @@
+// main.go: stdlib drop-in replacement example using flash-flags
+//
+// Copyright (c) 2025 AGILira - A. Giordano
+// Series: an AGILira library
+// SPDX-License-Identifier: MPL-2.0
+
 // Example demonstrates drop-in replacement for standard library flag package.
 // This example shows how existing code can migrate to flash-flags with ZERO changes
-// while gaining advanced features like config file support and environment variables.
+// while gaining advanced features like config file support, advanced security and environment variables.
 package main
 
 import (

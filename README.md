@@ -67,7 +67,7 @@ FlashFlags delivers exceptional performance with security-hardened parsing:
 
 ```
 AMD Ryzen 5 7520U 
-BenchmarkFlashFlags-8      1,294,699    924 ns/op     945 B/op    11 allocs/op  🛡️ SECURE
+BenchmarkFlashFlags-8      1,294,699    924 ns/op     945 B/op    11 allocs/op
 BenchmarkStdFlag-8         1,527,176    792 ns/op     945 B/op    13 allocs/op  
 BenchmarkPflag-8             785,904   1322 ns/op    1569 B/op    21 allocs/op  
 BenchmarkGoFlags-8           147,394   7460 ns/op    5620 B/op    61 allocs/op  

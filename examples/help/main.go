@@ -1,4 +1,4 @@
-// flash-flags/demo/help: Ultra-fast command-line flag parsing for Go - help flags example
+// main.go: help flags using flash-flags
 //
 // Copyright (c) 2025 AGILira - A. Giordano
 // Series: an AGILira library
