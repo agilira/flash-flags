@@ -1,12 +1,14 @@
 // Package flashflags provides ultra-fast, zero-dependency, lock-free command-line flag parsing for Go.
 //
-// Flash-flags is designed for maximum performance with minimal memory allocations.
+// Flash-flags is designed for maximum performance with minimal memory allocations,
+// comprehensive security hardening, and full compatibility with Go 1.23+.
 // It provides a clean API similar to the standard library flag package but with
-// significant performance improvements and additional features.
+// significant security improvements and additional features.
 //
 // Key Features:
 //
-//   - Ultra-fast parsing with optimized memory allocations
+//   - Security-hardened parsing with protection against injection attacks
+//   - Ultra-fast parsing (924ns/op) with only 132ns security overhead
 //   - Zero external dependencies (only standard library)
 //   - Lock-free design for concurrent access (thread-safe)
 //   - Drop-in replacement for Go standard library flag package
@@ -18,6 +20,19 @@
 //   - Short and long flag support with combined syntax
 //   - Full support for remaining arguments (Args(), NArg(), Arg(i))
 //   - Stdlib-compatible boolean flag behavior
+//
+// Security Features (v1.1.5+):
+//
+//   - Command Injection Protection: Blocks $(…), backticks, and shell metacharacters
+//   - Path Traversal Prevention: Prevents ../ and ..\ directory traversal attacks
+//   - Buffer Overflow Safeguards: 10KB input limits with fast-path optimization
+//   - Format String Attack Blocking: Detects and blocks %n, %s format string exploits
+//   - Input Sanitization: Removes null bytes and dangerous control characters
+//   - Windows Device Protection: Blocks Windows reserved names (CON, PRN, AUX, etc.)
+//   - Fast-path optimization: Simple alphanumeric inputs bypass heavy validation
+//
+// The security overhead is minimal (132ns per operation, 17%) while providing
+// comprehensive protection against common attack vectors.
 //
 // Supported Flag Syntax:
 //
@@ -240,33 +255,43 @@
 //
 // Performance and Benchmarks:
 //
-// Flash-flags delivers exceptional performance compared to alternatives:
+// Flash-flags delivers exceptional performance with comprehensive security hardening:
 //
-//	Benchmark Results (AMD Ryzen 5 7520U, Go 1.25, equalized test conditions):
-//	  Flash-flags:               875 ns/op    (our implementation)
-//	  Go standard library flag:  795 ns/op    (baseline)
-//	  Spf13/pflag:             1,339 ns/op    (53% slower than flash-flags)
+//	Benchmark Results (AMD Ryzen 5 7520U, Go 1.23+, v1.1.5):
+//	  Flash-flags (secure):      924 ns/op    (with full security validation)
+//	  Go standard library flag:  792 ns/op    (baseline, no security)
+//	  Spf13/pflag:             1,322 ns/op    (43% slower than flash-flags)
 //	  Other libraries:       7,500+ ns/op    (8-10x slower)
 //
-//	Internal performance metrics:
+//	Security overhead: Only 132ns (17%) for complete protection
+//
+//	Internal performance metrics (zero allocations):
 //	  BenchmarkGetters/GetString  136M    9.01 ns/op   0 B/op   0 allocs/op
 //	  BenchmarkGetters/GetInt     142M    8.35 ns/op   0 B/op   0 allocs/op
 //	  BenchmarkGetters/GetBool    135M    8.88 ns/op   0 B/op   0 allocs/op
 //	  BenchmarkGetters/GetDuration 134M   8.86 ns/op   0 B/op   0 allocs/op
 //
 // Key performance characteristics:
-//   - Competitive parsing performance (875ns vs 795ns stdlib baseline)
-//   - 53% faster than pflag (the main competitor)
+//   - 924ns with full security (command injection, path traversal, format string protection)
+//   - 43% faster than pflag while providing equivalent functionality plus security
 //   - Sub-nanosecond flag value access (8-9ns average)
 //   - Zero allocations for all getter operations after parsing
 //   - Lock-free concurrent reads (thread-safe)
 //   - Hash-based O(1) flag lookup with minimal overhead
 //   - Full support for remaining arguments with minimal overhead
+//   - Fast-path optimization for simple alphanumeric inputs (bypasses heavy validation)
 //
 // Performance trade-offs:
-//   - 10% slower than stdlib but gains: short flags, config files, env vars, validation
-//   - 53% faster than pflag while providing equivalent functionality plus more
-//   - Optimal for applications that need advanced features without sacrificing performance
+//   - 17% slower than stdlib but gains: security, short flags, config files, env vars, validation
+//   - 43% faster than pflag while providing more features and better security
+//   - Optimal for production applications requiring security without sacrificing performance
+//
+// Compatibility and Requirements:
+//
+//   - Go 1.23 or later (follows LTS guidelines)
+//   - Zero external dependencies
+//   - Full backward compatibility maintained
+//   - Drop-in replacement for standard library flag package
 //
 // Error Handling:
 //
@@ -279,8 +304,43 @@
 //   - Type conversion errors: "invalid int value for flag --port: abc"
 //   - Configuration errors: "config file error: failed to read config.json"
 //   - Help requests: "help requested" (special case, not a real error)
+//   - Security validation errors: "flag --name contains dangerous pattern"
+//   - Buffer overflow errors: "flag --data value too long: 15000 chars (max: 10000)"
 //
 // All errors include the flag name and specific details to help with debugging.
+//
+// Security Validation:
+//
+// FlashFlags automatically validates all input against common security threats:
+//
+//   - Command injection: Detects $(...), backticks, pipes, redirections
+//   - Path traversal: Blocks ../ and ..\ sequences
+//   - Format strings: Prevents %n, %s, %x format string attacks
+//   - Null bytes: Removes \x00 null byte injection attempts
+//   - Control chars: Filters dangerous control characters (except \t, \n, \r)
+//   - Buffer overflow: Enforces 10KB input size limit per flag value
+//   - Windows devices: Blocks CON, PRN, AUX, COM1-9, LPT1-9 device names
+//
+// Fast-path optimization: Simple alphanumeric values (a-z, A-Z, 0-9, -, _, ., :)
+// bypass heavy validation for optimal performance on common use cases.
+//
+// Example security validation:
+//
+//	fs := flashflags.New("myapp")
+//	cmd := fs.String("command", "", "Command to execute")
+//
+//	// These will be rejected with security errors:
+//	fs.Parse([]string{"--command", "rm -rf /"})           // Command injection
+//	fs.Parse([]string{"--command", "../../etc/passwd"})   // Path traversal
+//	fs.Parse([]string{"--command", "%n%n%n%n"})          // Format string attack
+//
+// Version and Compatibility:
+//
+//   - Current version: v1.1.5 (October 2025)
+//   - Requires: Go 1.23 or later
+//   - Changelog: See changelog/v1.1.5.txt for latest updates
+//   - Repository: github.com/agilira/flash-flags
+//   - License: MPL-2.0 (Mozilla Public License 2.0)
 //
 // Copyright (c) 2025 AGILira
 // Series: an AGILira library
