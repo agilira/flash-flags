@@ -1,0 +1,25 @@
+Flash-Flags v1.1.6 - Maintenance Release
+=========================================
+
+Release Date: January 7, 2025
+Type: Maintenance Release
+
+CHANGES
+-------
+
+Demo Recording:
+• Updated asciinema demo recording (previous had expired)
+  - New ID: m8RDmYkLaWEvxxN8Zd1Xj9SKR
+  - Demonstrates JSON config with command-line override
+  - Shows configuration priority system
+
+Quality Assurance:
+• All 7 examples verified: build pass
+  - advanced-syntax, basic, config, env
+  - help, required, stdlib-drop-in
+• Core library tests: 100% pass (0.021s)
+• No TODO/FIXME issues
+
+---
+
+Flash-Flags • an AGILira library
