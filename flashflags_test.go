@@ -9,6 +9,7 @@ package flashflags
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -3074,25 +3075,33 @@ func TestLoadConfigFromFileCrossPlatformPaths(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		path    string
-		wantErr bool
+		name     string
+		path     string
+		wantErr  bool
+		unixOnly bool // WHY: /home/... is not absolute on Windows (no drive letter)
+		winOnly  bool
 	}{
-		// Traversal is always blocked
-		{"traversal unix", "/etc/myapp/../../../etc/shadow", true},
-		{"traversal relative", "config/../../../etc/shadow", true},
+		// Traversal is always blocked (platform-independent)
+		{"traversal unix", "/etc/myapp/../../../etc/shadow", true, false, false},
+		{"traversal relative", "config/../../../etc/shadow", true, false, false},
 
-		// Safe absolute paths still fail because file doesn't exist,
-		// but they pass the validation stage (error is "failed to read")
-		{"safe unix tmp", "/tmp/nonexistent-flashflags-test.json", false},
+		// Unix: safe absolute path passes validation (file-not-found is OK)
+		{"safe unix tmp", "/tmp/nonexistent-flashflags-test.json", false, true, false},
 
-		// Unsafe absolute paths are blocked at validation
-		{"unsafe unix home", "/home/user/evil.json", true},
-		{"unsafe unix root", "/root/config.json", true},
+		// Unix: unsafe absolute paths are blocked at validation
+		{"unsafe unix home", "/home/user/evil.json", true, true, false},
+		{"unsafe unix root", "/root/config.json", true, true, false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.unixOnly && runtime.GOOS == "windows" {
+				t.Skip("Unix-specific path; not absolute on Windows")
+			}
+			if tt.winOnly && runtime.GOOS != "windows" {
+				t.Skip("Windows-specific path")
+			}
+
 			fs := New("test")
 			_ = fs.String("host", "localhost", "host")
 
