@@ -34,7 +34,7 @@ See Flash-Flags in action - POSIX-compliant stdlib replacement with JSON config 
 - **Security-Hardened**: Built-in protection against injection attacks, path traversal, and buffer overflows
 - **Ultra-Fast**: 85% of stdlib performance with comprehensive security validation
 - **Zero Dependencies**: Can be use as drop-in stdlib replacement with security
-- **Lock-Free**: Thread-safe operations without locks
+- **Concurrent-Safe**: Safe for concurrent reads after Parse() -- no locks needed at runtime
 - **Configuration Files**: JSON config file support with auto-discovery
 - **Environment Variables**: Automatic environment variable integration
 - **Validation**: Built-in validation system with custom validators

@@ -13,13 +13,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
 )
 
 // Flag represents a single command-line flag with its value, metadata, and constraints.
-// It implements ultra-fast flag handling using only the standard library with thread-safe operations.
+// It implements ultra-fast flag handling using only the standard library.
+// Safe for concurrent reads after Parse() completes.
 //
 // Example usage:
 //
@@ -842,18 +844,20 @@ func (fs *FlagSet) parseLongFlag(args []string, i int) (int, error) {
 			// Boolean flag without explicit value = true
 			flagValue = "true"
 		} else {
-			// Non-boolean flag: look for value in next argument (must not be another flag)
-			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+			// Non-boolean flag: take value from the next argument.
+			// WHY: we do NOT check for a '-' prefix on the next arg because
+			// legitimate values can start with '-' (e.g., negative numbers
+			// like "-5", grep patterns like "-foo"). This matches the
+			// behavior of parseShortFlag which already works correctly.
+			if i+1 < len(args) {
 				flagValue = args[i+1]
-				// Set flag value
 				err := fs.setFlagValue(flagName, flagValue)
 				if err != nil {
 					return 0, err
 				}
 				return 1, nil // Consumed one extra argument
-			} else {
-				return 0, fmt.Errorf("flag --%s requires a value", flagName)
 			}
+			return 0, fmt.Errorf("flag --%s requires a value", flagName)
 		}
 	}
 
@@ -961,7 +965,11 @@ func (fs *FlagSet) parseStringSlice(value string) []string {
 	return fs.splitByComma(value)
 }
 
-// splitByComma splits a string by commas with optimized allocation
+// splitByComma splits a string by commas with optimized allocation.
+// NOTE: backslash-escaped commas (\,) are NOT supported -- values containing
+// literal commas must be passed as separate --flag invocations or quoted at the
+// shell level.  Escape support is deferred to a future minor release to avoid
+// a breaking change in the split semantics.
 func (fs *FlagSet) splitByComma(value string) []string {
 	commas := fs.countCommas(value)
 	slice := make([]string, 0, commas+1)
@@ -2156,9 +2164,16 @@ func (fs *FlagSet) findConfigFile() string {
 	return ""
 }
 
-// isSafeAbsolutePath checks if an absolute path is safe for config files
+// isSafeAbsolutePath checks if an absolute path is safe for config files.
+// WHY: We allowlist known-safe prefixes so that arbitrary absolute paths
+// (e.g. /root/.ssh/authorized_keys) cannot be loaded as config.
+// Cross-platform: handles both Unix and Windows path conventions.
 func isSafeAbsolutePath(path string) bool {
-	safePrefixes := []string{
+	// Normalise to forward slashes for uniform prefix matching
+	cleaned := filepath.ToSlash(filepath.Clean(path))
+
+	// Unix safe prefixes
+	unixSafe := []string{
 		"/tmp/",         // Linux/Unix temp
 		"/opt/",         // Optional software
 		"/etc/",         // System configuration
@@ -2166,11 +2181,32 @@ func isSafeAbsolutePath(path string) bool {
 		"/var/tmp/",     // System temp
 	}
 
-	for _, prefix := range safePrefixes {
-		if strings.HasPrefix(path, prefix) {
+	for _, prefix := range unixSafe {
+		if strings.HasPrefix(cleaned, prefix) {
 			return true
 		}
 	}
+
+	// Windows safe prefixes (drive-letter agnostic)
+	if runtime.GOOS == "windows" {
+		upper := strings.ToUpper(cleaned)
+		// Strip drive letter (e.g. "C:") for prefix comparison
+		if len(upper) >= 2 && upper[1] == ':' {
+			upper = upper[2:]
+		}
+		winSafe := []string{
+			"/PROGRAMDATA/", // system-wide app data
+			"/USERS/",       // user home trees
+			"/TEMP/",        // common temp alias
+			"/TMP/",         // common temp alias
+		}
+		for _, prefix := range winSafe {
+			if strings.HasPrefix(upper, prefix) {
+				return true
+			}
+		}
+	}
+
 	return false
 }
 
@@ -2181,8 +2217,10 @@ func (fs *FlagSet) loadConfigFromFile(path string) error {
 		return fmt.Errorf("invalid config file path: %s", path)
 	}
 
-	// Allow relative paths and safe absolute paths
-	if strings.HasPrefix(path, "/") && !isSafeAbsolutePath(path) {
+	// WHY filepath.IsAbs: the old HasPrefix(path, "/") missed Windows
+	// absolute paths like C:\config.json -- an attacker could bypass the
+	// allowlist entirely on Windows.
+	if filepath.IsAbs(path) && !isSafeAbsolutePath(path) {
 		return fmt.Errorf("invalid config file path: %s", path)
 	}
 

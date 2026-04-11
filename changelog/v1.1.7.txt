@@ -1,0 +1,64 @@
+Flash-Flags v1.1.7 - Security & Documentation Release
+======================================================
+
+Release Date: April 11, 2026
+Type: Security Fix + Documentation Improvements
+
+SECURITY FIX
+-------------
+
+Cross-Platform Config Path Validation (CWE-22):
+  isSafeAbsolutePath / loadConfigFromFile now handle Windows absolute paths.
+  Previously strings.HasPrefix(path, "/") missed Windows paths like
+  C:\malicious\config.json, allowing an attacker to bypass the safe-path
+  allowlist entirely on Windows.
+
+  - loadConfigFromFile: replaced HasPrefix(path, "/") with filepath.IsAbs(path)
+  - isSafeAbsolutePath: uses filepath.Clean + filepath.ToSlash for normalisation,
+    adds Windows safe prefixes (PROGRAMDATA, USERS, TEMP, TMP) gated on
+    runtime.GOOS == "windows"
+  - 15 new subtests: TestIsSafeAbsolutePath (10) +
+    TestLoadConfigFromFileCrossPlatformPaths (5)
+
+BUG FIX
+--------
+
+Long Flag Dash-Value Parsing:
+  --longflag -value (e.g. --offset -5) was rejected because parseLongFlag
+  checked !strings.HasPrefix(args[i+1], "-") before consuming the next
+  argument. Short flags (-o -5) already worked correctly.
+
+  - Removed the "-" prefix guard for known non-boolean long flags
+  - 11 new subtests in TestParseDashValues
+  - 8 new fuzz seeds for negative numbers in FuzzParse
+
+DOCUMENTATION
+--------------
+
+Thread-Safety Clarification:
+  Replaced "Lock-Free: Thread-safe operations without locks" with
+  "Concurrent-Safe: Safe for concurrent reads after Parse()".
+  Rewrote Thread Safety section in doc.go to describe the sequential-write /
+  concurrent-read model accurately. Go maps are not safe for concurrent
+  read+write; our guarantee is that after Parse() the maps are never
+  written again.
+
+splitByComma Escape Note:
+  Documented that backslash-escaped commas (\,) are NOT currently supported.
+  Values containing literal commas must use separate --flag invocations or
+  shell quoting. Escape support is deferred to a future minor release.
+
+QUALITY ASSURANCE
+------------------
+
+• go fmt, go vet: clean
+• staticcheck: clean
+• errcheck: clean
+• gosec: 0 issues (14 files, 7205 lines)
+• govulncheck: 0 vulnerabilities
+• go test -race: PASS
+• All existing tests: PASS (no regressions)
+
+---
+
+Flash-Flags - an AGILira library

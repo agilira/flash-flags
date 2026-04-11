@@ -79,6 +79,15 @@ func FuzzParse(f *testing.F) {
 		{"--flag", "--another-flag"}, // Flag as value
 		{"-abc=value=more"},          // Multiple equals
 		{"--flag\x00\x01", "value"},  // Null bytes in flag name
+
+		// Negative number values (must be treated as values, not flags)
+		{"--port", "-5"},
+		{"--port", "-0"},
+		{"--port", "-999999"},
+		{"-p", "-5"},
+		{"--host", "-foo"},    // String value starting with dash
+		{"--host", "--bar"},   // String value starting with double-dash
+		{"--timeout", "-30s"}, // Negative duration
 	}
 
 	// Convert to individual strings for the fuzzer

@@ -10,7 +10,7 @@
 //   - Security-hardened parsing with protection against injection attacks
 //   - Ultra-fast parsing (924ns/op) with only 132ns security overhead
 //   - Zero external dependencies (only standard library)
-//   - Lock-free design for concurrent access (thread-safe)
+//   - Safe for concurrent reads after Parse() -- no locks needed at runtime
 //   - Drop-in replacement for Go standard library flag package
 //   - Support for configuration files (JSON)
 //   - Environment variable integration
@@ -80,11 +80,14 @@
 //
 // Thread Safety:
 //
-// FlashFlags is designed to be thread-safe with lock-free operations:
-//   - All flag reading operations are safe for concurrent access
-//   - Parse() should be called only once from a single goroutine
-//   - Flag registration should be done before calling Parse()
-//   - After Parse() completes, all flag values can be read concurrently
+// FlashFlags uses a sequential-write / concurrent-read model:
+//   - Flag registration (String, Int, Bool, ...) and Parse() mutate internal maps
+//     and MUST be called from a single goroutine (typically main/init)
+//   - After Parse() completes, all flag value reads are safe for concurrent access
+//     without any locks -- the underlying maps are never written again
+//   - SetValidator() and other mutating methods must also be called before Parse()
+//
+// In short: register flags, call Parse(), then read freely from any goroutine.
 //
 // Drop-in Replacement for Standard Library flag Package:
 //
@@ -276,7 +279,7 @@
 //   - 43% faster than pflag while providing equivalent functionality plus security
 //   - Sub-nanosecond flag value access (8-9ns average)
 //   - Zero allocations for all getter operations after parsing
-//   - Lock-free concurrent reads (thread-safe)
+//   - Concurrent-safe reads after Parse() (no locks needed at runtime)
 //   - Hash-based O(1) flag lookup with minimal overhead
 //   - Full support for remaining arguments with minimal overhead
 //   - Fast-path optimization for simple alphanumeric inputs (bypasses heavy validation)

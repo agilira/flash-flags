@@ -2498,8 +2498,15 @@ func TestEnvironmentVariablesEdgeCases(t *testing.T) {
 	})
 
 	t.Run("load env without prefix", func(t *testing.T) {
+		// WHY: use a controlled env var instead of PATH. PATH contains '/'
+		// which triggers the path traversal security check and rightfully
+		// rejects the value. Using HOME would have the same issue.
+		const testEnvKey = "FF_TEST_ENVLOAD"
+		const testEnvVal = "loaded-from-env"
+		t.Setenv(testEnvKey, testEnvVal)
+
 		fs := New("test")
-		fs.String("PATH", "default", "Path setting") // Using existing env var
+		fs.String(testEnvKey, "default", "Test setting")
 
 		fs.EnableEnvLookup()
 
@@ -2508,10 +2515,9 @@ func TestEnvironmentVariablesEdgeCases(t *testing.T) {
 			t.Errorf("Expected no error, got %v", err)
 		}
 
-		// PATH should be loaded from environment
-		pathValue := fs.GetString("PATH")
-		if pathValue == "default" {
-			t.Error("Expected PATH to be loaded from environment, got default")
+		got := fs.GetString(testEnvKey)
+		if got != testEnvVal {
+			t.Errorf("Expected %q to be loaded from environment, got %q", testEnvVal, got)
 		}
 	})
 }
@@ -2802,4 +2808,309 @@ func TestArgsParsing(t *testing.T) {
 			t.Errorf("Expected Arg(1) = 'arg2', got '%s'", fs.Arg(1))
 		}
 	})
+}
+
+// TestParseDashValues verifies that flag values starting with '-' are correctly
+// consumed as values, not misinterpreted as separate flags.
+// WHY: negative numbers (-5), grep patterns (-foo), and other legitimate values
+// start with '-'. The parser must not reject them.
+func TestParseDashValues(t *testing.T) {
+	t.Run("long flag with negative int", func(t *testing.T) {
+		fs := New("test")
+		fs.IntVar("offset", "o", 0, "Offset")
+
+		err := fs.Parse([]string{"--offset", "-5"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		f := fs.Lookup("offset")
+		if f == nil {
+			t.Fatal("flag not found")
+		}
+		val, ok := f.Value().(int)
+		if !ok {
+			t.Fatalf("expected int, got %T", f.Value())
+		}
+		if val != -5 {
+			t.Errorf("expected -5, got %d", val)
+		}
+	})
+
+	t.Run("short flag with negative int", func(t *testing.T) {
+		fs := New("test")
+		fs.IntVar("offset", "o", 0, "Offset")
+
+		err := fs.Parse([]string{"-o", "-5"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		f := fs.Lookup("offset")
+		val, ok := f.Value().(int)
+		if !ok {
+			t.Fatalf("expected int, got %T", f.Value())
+		}
+		if val != -5 {
+			t.Errorf("expected -5, got %d", val)
+		}
+	})
+
+	t.Run("long flag with negative using equals", func(t *testing.T) {
+		fs := New("test")
+		fs.IntVar("offset", "o", 0, "Offset")
+
+		err := fs.Parse([]string{"--offset=-5"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		f := fs.Lookup("offset")
+		val, ok := f.Value().(int)
+		if !ok {
+			t.Fatalf("expected int, got %T", f.Value())
+		}
+		if val != -5 {
+			t.Errorf("expected -5, got %d", val)
+		}
+	})
+
+	t.Run("short flag with negative using equals", func(t *testing.T) {
+		fs := New("test")
+		fs.IntVar("offset", "o", 0, "Offset")
+
+		err := fs.Parse([]string{"-o=-5"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		f := fs.Lookup("offset")
+		val, ok := f.Value().(int)
+		if !ok {
+			t.Fatalf("expected int, got %T", f.Value())
+		}
+		if val != -5 {
+			t.Errorf("expected -5, got %d", val)
+		}
+	})
+
+	t.Run("large negative number", func(t *testing.T) {
+		fs := New("test")
+		fs.IntVar("count", "c", 0, "Count")
+
+		err := fs.Parse([]string{"--count", "-999999"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		f := fs.Lookup("count")
+		val, ok := f.Value().(int)
+		if !ok {
+			t.Fatalf("expected int, got %T", f.Value())
+		}
+		if val != -999999 {
+			t.Errorf("expected -999999, got %d", val)
+		}
+	})
+
+	t.Run("string flag with dash value", func(t *testing.T) {
+		fs := New("test")
+		fs.StringVar("pattern", "p", "", "Pattern")
+
+		err := fs.Parse([]string{"--pattern", "-foo"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		f := fs.Lookup("pattern")
+		val, ok := f.Value().(string)
+		if !ok {
+			t.Fatalf("expected string, got %T", f.Value())
+		}
+		if val != "-foo" {
+			t.Errorf("expected %q, got %q", "-foo", val)
+		}
+	})
+
+	t.Run("string flag with double dash value", func(t *testing.T) {
+		fs := New("test")
+		fs.StringVar("pattern", "p", "", "Pattern")
+
+		err := fs.Parse([]string{"--pattern", "--something"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		f := fs.Lookup("pattern")
+		val, ok := f.Value().(string)
+		if !ok {
+			t.Fatalf("expected string, got %T", f.Value())
+		}
+		if val != "--something" {
+			t.Errorf("expected %q, got %q", "--something", val)
+		}
+	})
+
+	t.Run("negative int with bool flag after", func(t *testing.T) {
+		fs := New("test")
+		fs.IntVar("offset", "o", 0, "Offset")
+		fs.BoolVar("verbose", "v", false, "Verbose")
+
+		err := fs.Parse([]string{"--offset", "-5", "--verbose"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		off := fs.Lookup("offset")
+		val, ok := off.Value().(int)
+		if !ok {
+			t.Fatalf("expected int, got %T", off.Value())
+		}
+		if val != -5 {
+			t.Errorf("offset: expected -5, got %d", val)
+		}
+		verb := fs.Lookup("verbose")
+		bval, ok := verb.Value().(bool)
+		if !ok {
+			t.Fatalf("expected bool, got %T", verb.Value())
+		}
+		if !bval {
+			t.Error("verbose: expected true")
+		}
+	})
+
+	t.Run("float64 negative value", func(t *testing.T) {
+		fs := New("test")
+		ratioPtr := fs.Float64("ratio", 0.0, "Ratio")
+
+		err := fs.Parse([]string{"--ratio", "-3.14"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if *ratioPtr != -3.14 {
+			t.Errorf("expected -3.14, got %f", *ratioPtr)
+		}
+	})
+
+	t.Run("negative zero", func(t *testing.T) {
+		fs := New("test")
+		fs.IntVar("count", "c", 1, "Count")
+
+		err := fs.Parse([]string{"--count", "-0"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		f := fs.Lookup("count")
+		val, ok := f.Value().(int)
+		if !ok {
+			t.Fatalf("expected int, got %T", f.Value())
+		}
+		if val != 0 {
+			t.Errorf("expected 0, got %d", val)
+		}
+	})
+
+	t.Run("mixed positive and negative values", func(t *testing.T) {
+		fs := New("test")
+		fs.IntVar("min", "", 0, "Min")
+		fs.IntVar("max", "", 0, "Max")
+
+		err := fs.Parse([]string{"--min", "-10", "--max", "10"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		minF := fs.Lookup("min")
+		minVal, ok := minF.Value().(int)
+		if !ok {
+			t.Fatalf("expected int, got %T", minF.Value())
+		}
+		maxF := fs.Lookup("max")
+		maxVal, ok := maxF.Value().(int)
+		if !ok {
+			t.Fatalf("expected int, got %T", maxF.Value())
+		}
+		if minVal != -10 {
+			t.Errorf("min: expected -10, got %d", minVal)
+		}
+		if maxVal != 10 {
+			t.Errorf("max: expected 10, got %d", maxVal)
+		}
+	})
+}
+
+// TestIsSafeAbsolutePath verifies cross-platform absolute path allowlisting.
+// WHY: the original check used strings.HasPrefix(path, "/") which missed
+// Windows absolute paths entirely -- an attacker could bypass the allowlist.
+func TestIsSafeAbsolutePath(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		path string
+		want bool
+	}{
+		// Unix safe paths
+		{"unix tmp", "/tmp/app/config.json", true},
+		{"unix opt", "/opt/myapp/config.json", true},
+		{"unix etc", "/etc/myapp/config.json", true},
+		{"unix var folders", "/var/folders/xx/config.json", true},
+		{"unix var tmp", "/var/tmp/config.json", true},
+
+		// Unix unsafe paths
+		{"unix root ssh", "/root/.ssh/authorized_keys", false},
+		{"unix home", "/home/user/.bashrc", false},
+		{"unix usr", "/usr/local/config.json", false},
+
+		// Path cleaning -- filepath.Clean normalises these
+		{"unix tmp trailing slash", "/tmp/config.json/", true},
+		{"unix tmp double slash", "/tmp//app//config.json", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isSafeAbsolutePath(tt.path)
+			if got != tt.want {
+				t.Errorf("isSafeAbsolutePath(%q) = %v, want %v", tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestLoadConfigFromFileCrossPlatformPaths tests that loadConfigFromFile
+// rejects unsafe absolute paths using filepath.IsAbs (not just "/" prefix).
+func TestLoadConfigFromFileCrossPlatformPaths(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		path    string
+		wantErr bool
+	}{
+		// Traversal is always blocked
+		{"traversal unix", "/etc/myapp/../../../etc/shadow", true},
+		{"traversal relative", "config/../../../etc/shadow", true},
+
+		// Safe absolute paths still fail because file doesn't exist,
+		// but they pass the validation stage (error is "failed to read")
+		{"safe unix tmp", "/tmp/nonexistent-flashflags-test.json", false},
+
+		// Unsafe absolute paths are blocked at validation
+		{"unsafe unix home", "/home/user/evil.json", true},
+		{"unsafe unix root", "/root/config.json", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := New("test")
+			_ = fs.String("host", "localhost", "host")
+
+			err := fs.loadConfigFromFile(tt.path)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("loadConfigFromFile(%q): expected error, got nil", tt.path)
+				}
+				// Traversal and unsafe paths produce "invalid config file path"
+				if !strings.Contains(err.Error(), "invalid config file path") {
+					t.Errorf("loadConfigFromFile(%q): unexpected error: %v", tt.path, err)
+				}
+			} else {
+				// For safe paths, accept either file-not-found or success
+				if err != nil && strings.Contains(err.Error(), "invalid config file path") {
+					t.Errorf("loadConfigFromFile(%q): path was rejected but should be allowed: %v", tt.path, err)
+				}
+			}
+		})
+	}
 }
