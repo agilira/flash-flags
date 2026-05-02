@@ -18,12 +18,12 @@ FlashFlags is an ultra-fast, zero-dependency, lock-free command-line flag parsin
 See Flash-Flags in action - POSIX-compliant stdlib replacement with JSON config support:
 
 <picture>
-  <source media="(max-width: 768px)" srcset="https://asciinema.org/a/m8RDmYkLaWEvxxN8Zd1Xj9SKR.svg" width="100%">
-  <source media="(max-width: 1024px)" srcset="https://asciinema.org/a/m8RDmYkLaWEvxxN8Zd1Xj9SKR.svg" width="90%">
-  <img src="https://asciinema.org/a/m8RDmYkLaWEvxxN8Zd1Xj9SKR.svg" alt="Flash-Flags CLI Demo" style="max-width: 100%; height: auto;" width="800">
+  <source media="(max-width: 768px)" srcset="https://asciinema.org/a/QJpvO4R70WE6kUE8.svg" width="100%">
+  <source media="(max-width: 1024px)" srcset="https://asciinema.org/a/QJpvO4R70WE6kUE8.svg" width="90%">
+  <img src="https://asciinema.org/a/QJpvO4R70WE6kUE8.svg" alt="Flash-Flags CLI Demo" style="max-width: 100%; height: auto;" width="800">
 </picture>
 
-*[Click to view interactive demo](https://asciinema.org/a/m8RDmYkLaWEvxxN8Zd1Xj9SKR)*
+*[Click to view interactive demo](https://asciinema.org/a/QJpvO4R70WE6kUE8)*
 
 </div>
 

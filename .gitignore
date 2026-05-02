@@ -68,3 +68,12 @@ testdata/
 *.cast
 demo-script.sh
 RECORDING.md
+
+# Example binaries (built locally for demo recording)
+examples/advanced-syntax/advanced-syntax
+examples/basic/basic
+examples/config/config-demo
+examples/env/env
+examples/help/help
+examples/required/required
+examples/stdlib-drop-in/stdlib-drop-in
