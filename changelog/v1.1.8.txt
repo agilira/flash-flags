@@ -1,0 +1,10 @@
+Flash-Flags v1.1.8 - Toolchain Update
+======================================
+
+Release Date: 2026-05-03
+Type: Maintenance
+
+CHANGED
+-------
+- Bumped minimum Go toolchain requirement from 1.23 to 1.25.9.
+  No API changes, no behavioral changes.
