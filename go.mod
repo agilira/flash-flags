@@ -1,3 +1,3 @@
 module github.com/agilira/flash-flags
 
-go 1.23
+go 1.25.9
