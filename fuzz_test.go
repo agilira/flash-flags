@@ -531,7 +531,7 @@ func containsObviousSecurityThreat(s string) bool {
 		"<script", // XSS
 		"javascript:",
 		"rm -rf",     // Dangerous commands
-		"DROP TABLE", // SQL injection hints
+		"drop table", // SQL injection hint
 		"eval(",
 		"exec(",
 	}
