@@ -2499,9 +2499,10 @@ func TestEnvironmentVariablesEdgeCases(t *testing.T) {
 	})
 
 	t.Run("load env without prefix", func(t *testing.T) {
-		// WHY: use a controlled env var instead of PATH. PATH contains '/'
-		// which triggers the path traversal security check and rightfully
-		// rejects the value. Using HOME would have the same issue.
+		// WHY: use a controlled env var instead of PATH, so the assertion does
+		// not depend on the machine's environment. Since v1.1.9 a '/' in a
+		// value is no longer rejected, so PATH would parse -- it would just
+		// make the test's expected value unpredictable.
 		const testEnvKey = "FF_TEST_ENVLOAD"
 		const testEnvVal = "loaded-from-env"
 		t.Setenv(testEnvKey, testEnvVal)

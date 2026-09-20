@@ -954,7 +954,7 @@ func (fs *FlagSet) setStringSliceValue(flag *Flag, value string) error {
 
 	// Apply security validation to each item in the slice
 	for i, item := range slice {
-		if err := fs.validateSecurityConstraints(flag.name+"["+strconv.Itoa(i)+"]", item); err != nil {
+		if err := fs.validateInputHygiene(flag.name+"["+strconv.Itoa(i)+"]", item); err != nil {
 			return fmt.Errorf("string slice item validation failed: %v", err)
 		}
 	}
@@ -1021,13 +1021,25 @@ func (fs *FlagSet) updateStringSlicePointer(flag *Flag, slice []string) {
 	}
 }
 
-// validateSecurityConstraints validates input values against common security threats
-// Optimized version - fast path for common safe inputs
-func (fs *FlagSet) validateSecurityConstraints(name, value string) error {
+// validateInputHygiene rejects flag values that are malformed as strings,
+// whatever they are later used for: a value longer than maxValueLength, or one
+// containing a null byte or a C0 control character other than tab, newline and
+// carriage return.
+//
+// WHY it stops there: a flag parser does not know whether a value will reach a
+// shell, a SQL driver, an fmt verb or a file open, so it cannot decide which
+// substrings are dangerous. Until v1.1.9 this function also rejected values
+// containing "/etc/", "rm -rf", "drop table", "$(", a backtick, format verbs
+// and Windows device names. That denylist blocked no attack -- "a; rm -rf ~",
+// "deploy && restart" and "..%2f..%2fetc" all passed it -- while rejecting
+// ordinary input such as "--config /etc/myapp.conf". Escaping belongs at the
+// point of use: exec without a shell, parameterize SQL, resolve and confine
+// paths. See screening_test.go, which pins both halves of this contract.
+func (fs *FlagSet) validateInputHygiene(name, value string) error {
 	// Fast path: length check first (most common case)
 	valueLen := len(value)
-	if valueLen > 10000 {
-		return fmt.Errorf("flag --%s value too long: %d chars (max: 10000)", name, valueLen)
+	if valueLen > maxValueLength {
+		return fmt.Errorf("flag --%s value too long: %d chars (max: %d)", name, valueLen, maxValueLength)
 	}
 
 	// Fast path: empty or very short values are usually safe
@@ -1040,9 +1052,11 @@ func (fs *FlagSet) validateSecurityConstraints(name, value string) error {
 		return nil
 	}
 
-	// Comprehensive checks for potentially dangerous values
-	return fs.validateSecurityConstraintsSlow(name, value)
+	return fs.validateInputHygieneSlow(name, value)
 }
+
+// maxValueLength is the largest accepted flag value, in bytes.
+const maxValueLength = 10000
 
 // isSimpleAlphanumeric checks if a string contains only safe characters
 func isSimpleAlphanumeric(s string) bool {
@@ -1055,9 +1069,12 @@ func isSimpleAlphanumeric(s string) bool {
 	return true
 }
 
-// validateSecurityConstraintsSlow performs comprehensive security validation
-func (fs *FlagSet) validateSecurityConstraintsSlow(name, value string) error {
-	// Check for null bytes and dangerous control characters in one pass
+// validateInputHygieneSlow scans a value that did not qualify for the fast path.
+// It is a single pass looking for bytes that cannot appear in a well-formed
+// value: a null byte, which truncates the string in any C API it reaches, and a
+// C0 control character other than tab, newline or carriage return, which is
+// almost always a terminal escape sequence rather than data.
+func (fs *FlagSet) validateInputHygieneSlow(name, value string) error {
 	for i, r := range value {
 		if r == '\x00' {
 			return fmt.Errorf("flag --%s contains null byte at position %d", name, i)
@@ -1066,42 +1083,6 @@ func (fs *FlagSet) validateSecurityConstraintsSlow(name, value string) error {
 			return fmt.Errorf("flag --%s contains control character: \\x%02x", name, r)
 		}
 	}
-
-	// Path traversal check
-	if strings.Contains(value, "../") || strings.Contains(value, "..\\") {
-		return fmt.Errorf("flag --%s contains path traversal sequence", name)
-	}
-
-	// Combined pattern check for efficiency
-	lowerValue := strings.ToLower(value)
-
-	// Critical patterns only (most dangerous)
-	if strings.Contains(lowerValue, "$(") || strings.Contains(value, "`") ||
-		strings.Contains(lowerValue, "rm -rf") || strings.Contains(lowerValue, "/etc/") ||
-		strings.Contains(lowerValue, "/proc/") || strings.Contains(lowerValue, "/sys/") ||
-		strings.Contains(lowerValue, "drop table") {
-		return fmt.Errorf("flag --%s contains dangerous pattern", name)
-	}
-
-	// Check for format string attacks (case insensitive)
-	for i := 0; i < len(value)-1; i++ {
-		if value[i] == '%' {
-			next := strings.ToLower(string(value[i+1]))
-			if next == "n" || next == "s" || next == "x" || next == "d" || next == "c" || next == "p" {
-				return fmt.Errorf("flag --%s contains format string pattern", name)
-			}
-		}
-	}
-
-	// Windows device names (only check if short enough)
-	if len(value) < 10 {
-		upperValue := strings.ToUpper(value)
-		if upperValue == "CON" || upperValue == "PRN" || upperValue == "AUX" || upperValue == "NUL" ||
-			strings.HasPrefix(upperValue, "COM") || strings.HasPrefix(upperValue, "LPT") {
-			return fmt.Errorf("flag --%s matches Windows device name", name)
-		}
-	}
-
 	return nil
 }
 
@@ -1130,7 +1111,7 @@ func (fs *FlagSet) setFlagValueFrom(name, value string, src flagSource) error {
 
 	// Apply security validation before processing the value (optimized path)
 	if len(value) > 0 && (len(value) > 100 || !isSimpleAlphanumeric(value)) {
-		if err := fs.validateSecurityConstraints(name, value); err != nil {
+		if err := fs.validateInputHygiene(name, value); err != nil {
 			return err
 		}
 	}
@@ -2408,7 +2389,7 @@ func (fs *FlagSet) setFlagValueFromConfig(name string, value interface{}) error 
 
 	// Apply security validation for string values from config
 	if strValue, ok := value.(string); ok {
-		if err := fs.validateSecurityConstraints(name, strValue); err != nil {
+		if err := fs.validateInputHygiene(name, strValue); err != nil {
 			return fmt.Errorf("config security validation failed: %v", err)
 		}
 	}
