@@ -213,10 +213,17 @@ func (fs *FlagSet) OpenConfined(name string) (*os.File, error) {
 	// refuses an escape itself during resolution. If the value cannot be made
 	// relative -- a broken working directory, different Windows volumes -- hand
 	// it over unchanged and let os.Root decide, which fails closed.
+	//
+	// WHY both sides go through resolvePath: resolving only the base makes the
+	// two disagree about what the flag names whenever the path is reached
+	// through a link. On macOS /var/folders resolves via /private, and on
+	// Windows EvalSymlinks expands an 8.3 short name such as RUNNER~1, so the
+	// same file spelled two ways came out as an escape. Linux under /tmp hid it,
+	// because nothing there needs resolving.
 	target := value
 	if resolvedBase, err := resolvePath(flag.confineTo); err == nil {
-		if abs, err := filepath.Abs(value); err == nil {
-			if rel, err := filepath.Rel(resolvedBase, filepath.Clean(abs)); err == nil {
+		if resolvedValue, err := resolvePath(value); err == nil {
+			if rel, err := filepath.Rel(resolvedBase, resolvedValue); err == nil {
 				target = rel
 			}
 		}

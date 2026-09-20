@@ -512,3 +512,50 @@ func TestConfinePath_UnresolvableWorkingDirectory(t *testing.T) {
 		}
 	})
 }
+
+// TestOpenConfined_BaseReachedThroughSymlink is the OpenConfined counterpart of
+// TestConfinePath_BaseReachedThroughSymlink, and exists because the two got out
+// of step: the check resolved both sides while the open resolved only the base,
+// so a value naming the same file by an unresolved path was computed as
+// escaping.
+//
+// It passed on Linux under /tmp, where nothing needs resolving, and failed on
+// macOS -- /var/folders is reached through /private -- and on Windows, where
+// EvalSymlinks expands an 8.3 short name such as RUNNER~1. Both sides must be
+// resolved the same way, or they disagree about what the flag names.
+func TestOpenConfined_BaseReachedThroughSymlink(t *testing.T) {
+	base, _ := confineTree(t)
+	linkedBase := filepath.Join(filepath.Dir(base), "link-to-app")
+	if err := os.Symlink(base, linkedBase); err != nil {
+		t.Skipf("symlink: %v", err)
+	}
+
+	for name, tc := range map[string]struct{ confineTo, value string }{
+		"value through the link": {base, filepath.Join(linkedBase, "sub", "ok.json")},
+		"base through the link":  {linkedBase, filepath.Join(base, "sub", "ok.json")},
+		"both through the link":  {linkedBase, filepath.Join(linkedBase, "sub", "ok.json")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			fs := New("app")
+			fs.String("path", "", "")
+			if err := fs.ConfinePath("path", tc.confineTo); err != nil {
+				t.Fatalf("ConfinePath: %v", err)
+			}
+			if err := fs.Parse([]string{"--path", tc.value}); err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			f, err := fs.OpenConfined("path")
+			if err != nil {
+				t.Fatalf("OpenConfined: %v", err)
+			}
+			defer func() { _ = f.Close() }()
+			data, err := io.ReadAll(f)
+			if err != nil {
+				t.Fatalf("read: %v", err)
+			}
+			if string(data) != `{"host":"inside"}` {
+				t.Errorf("content = %q", data)
+			}
+		})
+	}
+}
