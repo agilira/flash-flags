@@ -278,6 +278,38 @@
 //	// Example: MYAPP_PORT=3000 ./myapp --host=0.0.0.0
 //	// Result: host=0.0.0.0 (CLI), port=3000 (env var)
 //
+// Path Confinement:
+//
+// ConfinePath restricts a string or string-slice flag to paths inside a
+// directory the application names. Parse then rejects a value resolving
+// outside it, whichever source supplied the value.
+//
+//	fs.String("config", "", "Config file")
+//	fs.ConfinePath("config", "/etc/myapp")
+//
+// This is not the denylist removed in v1.1.9. That one tried to infer from a
+// value's contents whether it was dangerous, which a parser cannot know. Here
+// the application states the rule and the library enforces the rule it was
+// given. Containment is also easy to get subtly wrong by hand: it has to
+// resolve symlinks on both sides, cope with a path that does not exist yet,
+// and compare whole path elements rather than string prefixes, or a sibling
+// directory named "/etc/myapp-evil" passes as a child of "/etc/myapp".
+//
+// The check answers for the moment it runs. Between Parse and the moment the
+// application opens the path, a symlink planted in that window is followed.
+// This stops mistakes, typos and plain traversal; it does not stop a local
+// attacker racing the process.
+//
+// Closing that window requires performing the open under the same constraint,
+// which is what OpenConfined does:
+//
+//	f, err := fs.OpenConfined("config")
+//
+// The open goes through os.Root, so containment is enforced while the path is
+// resolved rather than checked beforehand. On Linux the kernel enforces it.
+// Use ConfinePath to fail early with a clear message, and OpenConfined when
+// the guarantee has to hold.
+//
 // Validation and Constraints:
 //
 //	fs := flashflags.New("server")
@@ -384,7 +416,7 @@
 //
 // Version and Compatibility:
 //
-//   - Current version: v1.1.9
+//   - Current version: v1.2.0
 //   - Requires: Go 1.25.9 or later
 //   - Changelog: See changelog/ for release notes
 //   - Repository: github.com/agilira/flash-flags

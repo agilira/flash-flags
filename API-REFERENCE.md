@@ -976,6 +976,69 @@ err := fs.SetValidator("port", func(val interface{}) error {
 
 ---
 
+#### ConfinePath
+```go
+func (fs *FlagSet) ConfinePath(name, dir string) error
+```
+
+Restricts a string or string-slice flag to paths inside `dir`. `Parse` then rejects a value resolving outside it, whichever source supplied the value.
+
+**Parameters:**
+- `name` (string): Flag name — must be a `string` or `stringSlice` flag
+- `dir` (string): Directory the value must resolve inside
+
+**What the check does:**
+- Resolves symlinks on **both** the base and the value, so a link inside the base pointing outside it is caught. Both sides, not just the value: `/tmp` on macOS is a symlink to `/private/tmp`, and resolving one side only would reject every path under such a base.
+- Handles a value that does not exist yet, by resolving its deepest existing ancestor and re-appending the rest. `filepath.EvalSymlinks` alone fails on a missing component, which would reject any flag naming a file to be created.
+- Compares whole path elements, so `/etc/myapp-evil` does not pass as a child of `/etc/myapp`. That is the mistake a `strings.HasPrefix` comparison makes.
+
+**Relative values** resolve against the working directory, the way the OS will resolve them when the file is opened — not against `dir`. An empty value is skipped.
+
+> **What it cannot do.** The check answers for the moment it runs. Between `Parse` and the moment your program opens the path, a symlink planted in that window is followed. This stops mistakes, typos and plain traversal; it does not stop a local attacker racing the process. See `OpenConfined` below.
+
+**Example:**
+```go
+fs := flashflags.New("myapp")
+fs.String("config", "", "Config file")
+if err := fs.ConfinePath("config", "/etc/myapp"); err != nil {
+    log.Fatal(err)
+}
+```
+
+Returns an error if the flag does not exist, is not a string or string slice, or `dir` is empty.
+
+*Added in v1.2.0.*
+
+---
+
+#### OpenConfined
+```go
+func (fs *FlagSet) OpenConfined(name string) (*os.File, error)
+```
+
+Opens the file named by a confined string flag, for reading, without the window `ConfinePath` leaves open.
+
+The open is performed through [`os.Root`](https://pkg.go.dev/os#Root), so containment is enforced *while* the path is resolved rather than checked beforehand. A symlink planted after `Parse`, or swapped in mid-resolution, cannot redirect the open outside the confinement directory: on Linux the kernel enforces it, and elsewhere Go resolves the path one element at a time under the same constraint.
+
+This is the only way to close that window, and the reason is structural: a check validates a string and your program opens it later, so whatever happens in between is invisible to a check that has already run.
+
+**Example:**
+```go
+fs.ConfinePath("config", "/etc/myapp")
+// ...
+f, err := fs.OpenConfined("config")
+if err != nil {
+    log.Fatal(err)
+}
+defer f.Close()
+```
+
+Returns an error if the flag does not exist, is not a string flag, has no confinement directory, holds no value, or cannot be opened.
+
+*Added in v1.2.0.*
+
+---
+
 #### ValidateAll
 ```go
 func (fs *FlagSet) ValidateAll() error
@@ -1697,7 +1760,7 @@ BenchmarkGetters/GetDuration  134M    8.86 ns/op   0 B/op   0 allocs/op
 
 ## Version History
 
-**Current version:** v1.1.9
+**Current version:** v1.2.0
 
 See `changelog/` directory for version history.
 

@@ -325,6 +325,43 @@ export MYAPP_PORT=8080
 export DATABASE_URL=postgres://...
 ```
 
+## Path Confinement
+
+`ConfinePath` restricts a string or string-slice flag to paths inside a
+directory you name. `Parse` then rejects a value resolving outside it, whichever
+source supplied it:
+
+```go
+fs.String("config", "", "Config file")
+fs.ConfinePath("config", "/etc/myapp")
+
+// Parse now rejects --config /etc/shadow, --config ../../etc/shadow,
+// and a symlink under /etc/myapp pointing anywhere else.
+```
+
+This is not the denylist removed in v1.1.9. That one guessed from a value's
+contents whether it was dangerous; here *you* state the rule and the library
+enforces the rule it was given. Containment is also easy to get subtly wrong by
+hand — it resolves symlinks on both sides, copes with a path that does not exist
+yet, and compares whole path elements, so `/etc/myapp-evil` does not pass as a
+child of `/etc/myapp`.
+
+**What it cannot do.** The check answers for the moment it runs. Between `Parse`
+and the moment you open the path, a symlink planted in that window is followed.
+This stops mistakes, typos and plain traversal — not a local attacker racing
+your process.
+
+Closing that window means performing the open under the same constraint:
+
+```go
+f, err := fs.OpenConfined("config")
+```
+
+The open goes through [`os.Root`](https://pkg.go.dev/os#Root), so containment is
+enforced *while* the path is resolved rather than checked beforehand — on Linux,
+by the kernel. Use `ConfinePath` to fail early with a clear message, and
+`OpenConfined` when the guarantee has to hold.
+
 ## Validation & Constraints
 
 ```go

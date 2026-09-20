@@ -1,0 +1,70 @@
+Flash-Flags v1.2.0 - Path Confinement
+======================================
+
+Release Date: 2026-09-20
+Type: Feature
+
+ADDED
+-----
+- FlagSet.ConfinePath(name, dir) restricts a string or string-slice flag to
+  paths inside dir. Parse then rejects a value resolving outside it, whichever
+  source supplied the value.
+
+  WHY this is not the denylist v1.1.9 removed: that one tried to infer from a
+  value's contents whether it was dangerous, which a parser cannot know,
+  because the same string is harmless or fatal depending on the caller. Here
+  the application states the rule -- this flag names a path, and it belongs
+  under this directory -- and the library enforces the rule it was given. The
+  difference is who supplies the intent.
+
+  Containment is also worth providing because it is easy to get subtly wrong.
+  The implementation:
+
+    * Resolves symlinks on both the base and the value, so a link inside the
+      base pointing outside it is caught. Both sides: /tmp on macOS is a
+      symlink to /private/tmp, and resolving only the value would reject every
+      path under such a base.
+    * Handles a value that does not exist yet, by resolving its deepest
+      existing ancestor and re-appending the rest. filepath.EvalSymlinks alone
+      returns an error for a missing component, which would reject every flag
+      naming a file the program is about to create.
+    * Compares whole path elements, so a sibling directory named
+      "/etc/myapp-evil" does not pass as a child of "/etc/myapp". That is the
+      mistake a strings.HasPrefix comparison makes.
+
+  A relative value resolves against the working directory, the way the OS will
+  resolve it when the file is opened -- not against the base. Resolving it
+  against the base would make the check disagree with what actually gets
+  opened, which is worse than not checking. An empty value is skipped.
+
+  What it cannot do, stated here rather than in a footnote: the check answers
+  for the moment it runs. Between Parse and the moment the application opens
+  the path, a symlink planted in that window is followed. This stops mistakes,
+  typos and plain traversal. It does not stop a local attacker racing the
+  process.
+
+- FlagSet.OpenConfined(name) opens the file named by a confined string flag,
+  for reading, without that window.
+
+  The open goes through os.Root, so containment is enforced while the path is
+  resolved rather than checked beforehand. A symlink planted after Parse, or
+  swapped in mid-resolution, cannot redirect the open: on Linux the kernel
+  enforces it via openat2, and elsewhere Go resolves the path one element at a
+  time under the same constraint.
+
+  This is the only way to close that window, and the reason is structural: a
+  check validates a string and the application opens it later, so whatever
+  happens in between is invisible to a check that has already run. The race can
+  only be closed by whoever performs the open. os.Root is standard library as
+  of Go 1.24, so this costs no dependency.
+
+  TestOpenConfined_RefusesSymlinkPlantedAfterParse demonstrates the difference
+  rather than asserting it: the same value, after the same successful Parse, is
+  refused by OpenConfined and followed by a plain os.ReadFile.
+
+COMPATIBILITY
+-------------
+Additive. Both methods are opt-in, no existing behaviour changes, and a flag
+with no confinement directory is unaffected.
+
+Requires Go 1.25.9 or later, unchanged from v1.1.9. os.Root requires Go 1.24.
