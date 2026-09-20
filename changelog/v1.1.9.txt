@@ -75,6 +75,21 @@ CHANGED
   Screen values at the point of use, where their meaning is known: run os/exec
   without a shell, parameterize SQL, resolve and confine paths before opening.
 
+- The over-length error now reports bytes rather than characters:
+
+      before: flag --data value too long: 15000 chars (max: 10000)
+      after:  flag --data value too long: 15000 bytes (max: 10000)
+
+  The limit was always on bytes -- it is compared against len(value), which
+  counts bytes rather than runes -- so the count was right and its unit was
+  wrong. The gap is only visible outside ASCII, and there it is wide: 6000
+  accented characters are 12000 bytes, and were rejected with "12000 chars",
+  which reads as a limit twice as generous as the one being enforced.
+
+  This is the only user-visible string this release changes. A test asserting
+  on the word "chars" in that message will need updating; the rest of the
+  message, including the counts, is unchanged.
+
 - The configuration file path allowlist has been removed.
 
   loadConfigFromFile previously rejected any path containing ".." and any
@@ -98,10 +113,10 @@ CHANGED
   character device such as /dev/zero is refused for the same reason. os.Stat
   answers both without opening anything.
 
-  This is a robustness check, not a security boundary: it is racy against a
-  concurrent replacement of the path, and symlinks are still followed. An
-  application deriving the config path from untrusted input must validate and
-  confine it before calling SetConfigFile.
+  This is a robustness check, not a security boundary. An application deriving
+  the config path from untrusted input must validate and confine it before
+  calling SetConfigFile. Symlinks are still followed by default; see
+  EnableStrictConfigPaths under ADDED for the opt-in that refuses them.
 
 - Configuration auto-discovery advertised default search directories it never
   used. AddConfigPath's documentation, and the API reference, stated that with
@@ -178,16 +193,19 @@ DOCUMENTATION
   The Thread Safety sections now state this explicitly.
 
 - Corrected the description of input screening. The previous text claimed
-  protection against "shell metacharacters" and command injection in general.
-  The implementation is a fixed denylist: it does not filter ; | && or newline,
-  URL-encoded traversal sequences, absolute paths outside three prefixes, or the
-  %v, %+v, %#v, %q, %T and %[n]s format verbs. It also rejects legitimate values
-  such as /etc/myapp/config.yaml. The documentation now lists exactly what is
-  checked and states that this is a blunt input filter, not a security boundary.
+  protection against "shell metacharacters" and command injection in general,
+  which the denylist never delivered -- see CHANGED for what it did and did not
+  catch. The documentation now lists exactly what is checked, states that this
+  is a blunt input filter rather than a security boundary, and says where
+  escaping belongs instead.
 
-- Documented that SetConfigFile does not resolve symlinks, so an allowlisted
-  world-writable directory such as /tmp offers no protection against a symlink
-  planted before startup.
+- Corrected the description of config file path handling. The previous text
+  described the prefix allowlist as preventing directory traversal. It did not:
+  the path is chosen by the application, and the allowlist admitted /tmp while
+  refusing the user's home directory. The documentation now describes the
+  regular-file check that replaced it, states that symlinks are followed by
+  default, and points at EnableStrictConfigPaths for programs that need them
+  refused.
 
 - The fuzz suite asserted the removed denylist as an invariant: an accepted
   value was required not to contain "/etc/", "rm -rf", "%s" and friends. That
@@ -203,17 +221,53 @@ DOCUMENTATION
 - Corrected stale Go version (1.23) and version number (v1.1.5) references
   across doc.go, README.md and API-REFERENCE.md.
 
+TOOLING
+-------
+- gosec exclusions now live in .codecov.yml's neighbour .gosec.json, shared by
+  both workflows. ci.yml previously passed -conf .gosec.json to a file that was
+  never committed, so that scan ran unconfigured, and swallowed the result twice
+  with continue-on-error and a trailing "|| true". pr.yml repeated the exclusion
+  list inline, so the two gates could drift apart. Both now read the same file,
+  each exclusion carries its reason, and ci.yml reports its real exit status.
+
+- configopen_windows.go is excluded from codecov. Coverage is uploaded from the
+  ubuntu-latest job only, so a file kept out of the Linux build by its build tag
+  never appears in the profile; counting its statements as untested would
+  penalise the report for a reason no test can fix.
+
+- .gitignore listed the example binaries under the wrong names. go build names
+  its output after the module, so examples/basic emits basic-demo, not basic.
+  Building the examples left untracked files behind every time.
+
 COMPATIBILITY
 -------------
-No exported API was removed or changed. Both behavioural changes above are
-strictly more permissive for flag values and config paths, with two exceptions
-that only reject what could not work anyway: a config path pointing at a
-directory, a FIFO or a device is now refused instead of failing later or
-hanging. Changed() keeps its exact previous semantics
-("the flag no longer holds its default value") and is now derived from the
-recorded source.
+No exported API was removed or changed, and nothing new is enabled by default.
+Changed() keeps its exact previous semantics ("the flag no longer holds its
+default value") and is now derived from the recorded source.
 
-Applications that unknowingly relied on a config file overriding an environment
-variable will see the environment take effect instead. That is the documented
-and intended behavior; FlagSet.Source can be used to audit where each value
-comes from.
+Values and paths that used to be refused are now accepted. Input screening no
+longer rejects a value for its contents beyond the hygiene checks, and a config
+path is no longer matched against a prefix allowlist. Nothing that worked before
+stops working because of either.
+
+Three things are now refused that were not:
+
+  - A config path pointing at a directory, a FIFO or a device. Each of these
+    previously failed later, or hung: reading a FIFO blocks Parse until a
+    writer appears.
+  - A control character or null byte inside a string-slice element loaded from
+    a config file. The same value was already refused from the command line and
+    the environment; this closes the inconsistency rather than tightening the
+    rule.
+  - A symlinked config file, but only for programs that call
+    EnableStrictConfigPaths. It is off by default.
+
+One error message changes wording: the over-length error says "bytes" where it
+said "chars". The limit itself is unchanged, and no other user-visible string in
+the package is touched.
+
+One resolved value can change without any error being raised: an application
+that unknowingly relied on a config file overriding an environment variable
+will see the environment take effect instead. That is the documented and
+intended order, and FlagSet.Source can be used to audit where each value comes
+from.

@@ -1656,7 +1656,7 @@ Flash-flags returns descriptive errors for various scenarios:
 | Config error | `"config file error: failed to read config.json"` |
 | Help | `"help requested"` (special case) |
 | Input screening | `"flag --name contains null byte at position 3"` |
-| Over length | `"flag --data value too long: 15000 chars (max: 10000)"` |
+| Over length | `"flag --data value too long: 15000 bytes (max: 10000)"` |
 
 All errors include the flag name and specific details for debugging.
 

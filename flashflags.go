@@ -1082,7 +1082,7 @@ func (fs *FlagSet) validateInputHygiene(name, value string) error {
 	// Fast path: length check first (most common case)
 	valueLen := len(value)
 	if valueLen > maxValueLength {
-		return fmt.Errorf("flag --%s value too long: %d chars (max: %d)", name, valueLen, maxValueLength)
+		return fmt.Errorf("flag --%s value too long: %d bytes (max: %d)", name, valueLen, maxValueLength)
 	}
 
 	if valueLen == 0 {
@@ -1098,7 +1098,10 @@ func (fs *FlagSet) validateInputHygiene(name, value string) error {
 	return fs.validateInputHygieneSlow(name, value)
 }
 
-// maxValueLength is the largest accepted flag value, in bytes.
+// maxValueLength is the largest accepted flag value, in bytes. It is compared
+// against len(value), which counts bytes rather than runes, so a value of
+// multi-byte characters reaches the cap sooner than its character count
+// suggests. The error message names the unit for that reason.
 const maxValueLength = 10000
 
 // isSimpleAlphanumeric checks if a string contains only safe characters

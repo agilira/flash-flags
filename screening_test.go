@@ -294,3 +294,39 @@ func TestScreening_ConfigArrayNonStringElements(t *testing.T) {
 		t.Errorf("error = %v, want the element setter's type error", err)
 	}
 }
+
+// TestScreening_LengthCapCountsBytes pins both halves of the length limit: it
+// is measured in bytes, and the error says so. Go's len counts bytes, so a
+// value of multi-byte runes is rejected well before it reaches 10000
+// characters, and reporting that count as "chars" misled the reader into
+// thinking the limit was on characters.
+func TestScreening_LengthCapCountsBytes(t *testing.T) {
+	// "à" is two bytes in UTF-8.
+	const rep = 6000
+	value := strings.Repeat("à", rep)
+	if len(value) != rep*2 {
+		t.Fatalf("expected %d bytes, got %d", rep*2, len(value))
+	}
+
+	_, err := parseValue(t, value)
+	if err == nil {
+		t.Fatalf("Parse accepted %d bytes, want rejection above %d", len(value), maxValueLength)
+	}
+	if !strings.Contains(err.Error(), "bytes") {
+		t.Errorf("error = %v, want it to say bytes", err)
+	}
+	if strings.Contains(err.Error(), "chars") {
+		t.Errorf("error = %v, still reports a byte count as characters", err)
+	}
+	if !strings.Contains(err.Error(), "12000") {
+		t.Errorf("error = %v, want it to report the byte count 12000", err)
+	}
+
+	// Just under the cap in bytes, but far over it in characters had the limit
+	// been on characters: this must be accepted.
+	ok := strings.Repeat("à", maxValueLength/2)
+	if _, err := parseValue(t, ok); err != nil {
+		t.Errorf("Parse rejected %d bytes (%d characters): %v",
+			len(ok), len([]rune(ok)), err)
+	}
+}

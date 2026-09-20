@@ -360,7 +360,7 @@
 //   - Configuration errors: "config file error: failed to read config.json"
 //   - Help requests: "help requested" (special case, not a real error)
 //   - Input screening errors: "flag --name contains null byte at position 3"
-//   - Buffer overflow errors: "flag --data value too long: 15000 chars (max: 10000)"
+//   - Over-length errors: "flag --data value too long: 15000 bytes (max: 10000)"
 //
 // All errors include the flag name and specific details to help with debugging.
 //
