@@ -1,6 +1,6 @@
 module github.com/agilira/flash-flags/benchmarks
 
-go 1.23.11
+go 1.25.9
 
 require (
 	github.com/agilira/flash-flags v0.0.0

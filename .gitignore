@@ -77,3 +77,9 @@ examples/env/env
 examples/help/help
 examples/required/required
 examples/stdlib-drop-in/stdlib-drop-in
+
+# Example programs built in place by `go build ./...` inside examples/
+examples/*/basic-demo
+examples/*/env-demo
+examples/*/help-demo
+examples/*/required-demo
