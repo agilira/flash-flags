@@ -17,3 +17,8 @@ ignore:
   - "**/*_test.go"
   - "examples/**"
   - "benchmarks/**"
+  # Coverage is uploaded from the ubuntu-latest job only, so a file excluded
+  # from the Linux build by its build tag never appears in the profile. Leaving
+  # it in would count its statements as untested for reasons no test can fix.
+  # The cross-platform job does exercise it; it just does not upload.
+  - "configopen_windows.go"

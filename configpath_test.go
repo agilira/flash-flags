@@ -289,3 +289,64 @@ func TestAddConfigPath_SearchOrder(t *testing.T) {
 		t.Errorf("host = %q, want first", got)
 	}
 }
+
+// TestConfigPath_UnreadableFile covers the gap between the pre-open stat and
+// the open itself: a file can pass the regular-file check and still refuse to
+// open, most simply because the process cannot read it.
+func TestConfigPath_UnreadableFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod 000 does not deny reads on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("running as root; file modes do not deny access")
+	}
+	path := filepath.Join(t.TempDir(), "app.json")
+	if err := os.WriteFile(path, []byte(`{"host":"x"}`), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := os.Chmod(path, 0o000); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	defer func() { _ = os.Chmod(path, 0o600) }()
+
+	fs := New("app")
+	fs.String("host", "default", "")
+	fs.SetConfigFile(path)
+	err := fs.Parse([]string{})
+	if err == nil {
+		t.Fatal("Parse accepted an unreadable config file")
+	}
+	if !strings.Contains(err.Error(), "failed to read config file") {
+		t.Errorf("error = %v, want it to mention %q", err, "failed to read config file")
+	}
+}
+
+// TestApplyConfig_SkipsOutrankedFlags drives applyConfig directly. Through
+// Parse the guard is unreachable -- config is applied first, and a second
+// LoadConfig short-circuits on configLoaded -- but it is what keeps a caller
+// invoking applyConfig from a later reload silently downgrading a value.
+func TestApplyConfig_SkipsOutrankedFlags(t *testing.T) {
+	fs := New("app")
+	fs.String("host", "default", "")
+	fs.Int("port", 0, "")
+	if err := fs.Parse([]string{"--host", "cli-host"}); err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	if err := fs.applyConfig(map[string]interface{}{
+		"host": "config-host", // outranked by the command line: skipped
+		"port": float64(2222), // still at its default: applied
+	}); err != nil {
+		t.Fatalf("applyConfig: %v", err)
+	}
+
+	if got := fs.GetString("host"); got != "cli-host" {
+		t.Errorf("host = %q, want cli-host", got)
+	}
+	if got := fs.GetInt("port"); got != 2222 {
+		t.Errorf("port = %d, want 2222", got)
+	}
+	if got := fs.Source("port"); got != "config" {
+		t.Errorf("Source(port) = %q, want config", got)
+	}
+}

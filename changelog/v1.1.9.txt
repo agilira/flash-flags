@@ -37,6 +37,18 @@ FIXED
   form understood by time.ParseDuration ("30s", "1m30s") and a plain number of
   nanoseconds, which is what encoding/json emits for a time.Duration.
 
+- Configuration file values were screened only when they decoded to a string,
+  so the elements of a JSON array reached the flag unscreened. A config holding
+  {"tags": ["bad\u0000item"]} was accepted while --tags "bad\x00item" was
+  rejected, which made the guarantee depend on which layer supplied the value.
+  Array elements bound to a string slice are now screened like any other string.
+
+  The per-element loop on the command-line path has been removed as part of
+  this. It was unreachable: the whole value is screened before it is split, and
+  input hygiene is a per-character property, so no element can fail a check the
+  joined string already passed. The screening that was missing was on the config
+  path, which never passes through that function.
+
 - The example modules under examples/ and stdlib/ did not build after the v1.1.8
   toolchain bump: their go directive still said 1.23 while the parent module
   required 1.25.9. All module go directives are now aligned at 1.25.9.

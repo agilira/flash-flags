@@ -197,3 +197,100 @@ func TestScreening_FastPath(t *testing.T) {
 		t.Error("isSimpleAlphanumeric accepted a null byte")
 	}
 }
+
+// TestScreening_ConfigArrayElements covers a gap that predates v1.1.9: a config
+// file value is screened only when it decodes to a string, so the elements of a
+// JSON array reached the flag unscreened. The same value supplied on the command
+// line was rejected, which made the guarantee depend on which source a value
+// arrived from.
+func TestScreening_ConfigArrayElements(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{"null byte in element", "{\"tags\":[\"ok\",\"bad\\u0000item\"]}"},
+		{"control char in element", "{\"tags\":[\"ok\",\"bad\\u0007item\"]}"},
+		{"null byte in first element", "{\"tags\":[\"bad\\u0000item\"]}"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := New("app")
+			fs.StringSlice("tags", []string{"default"}, "")
+			fs.SetConfigFile(writeConfig(t, tt.body))
+			if err := fs.Parse([]string{}); err == nil {
+				t.Fatalf("Parse accepted %s; got tags=%q", tt.name, fs.GetStringSlice("tags"))
+			}
+		})
+	}
+}
+
+// TestScreening_ConfigArrayLegitimateElements checks the fix does not reject
+// ordinary array values, including ones the removed denylist used to block.
+func TestScreening_ConfigArrayLegitimateElements(t *testing.T) {
+	fs := New("app")
+	fs.StringSlice("paths", nil, "")
+	fs.SetConfigFile(writeConfig(t, `{"paths":["/etc/a.conf","../b","c; d","%s"]}`))
+	if err := fs.Parse([]string{}); err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	want := []string{"/etc/a.conf", "../b", "c; d", "%s"}
+	got := fs.GetStringSlice("paths")
+	if len(got) != len(want) {
+		t.Fatalf("paths = %q, want %q", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("paths[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+// TestScreening_SameGuaranteeFromEverySource states the property the gap broke:
+// whether a value is accepted must not depend on which layer supplied it.
+func TestScreening_SameGuaranteeFromEverySource(t *testing.T) {
+	const bad = "bad\x07item"
+
+	fromCLI := func() error {
+		fs := New("app")
+		fs.StringSlice("tags", nil, "")
+		return fs.Parse([]string{"--tags", "ok," + bad})
+	}
+	fromConfig := func() error {
+		fs := New("app")
+		fs.StringSlice("tags", nil, "")
+		fs.SetConfigFile(writeConfig(t, "{\"tags\":[\"ok\",\"bad\\u0007item\"]}"))
+		return fs.Parse([]string{})
+	}
+	fromEnv := func() error {
+		fs := New("app")
+		fs.StringSlice("tags", nil, "")
+		fs.SetEnvPrefix("APP")
+		fs.EnableEnvLookup()
+		t.Setenv("APP_TAGS", "ok,"+bad)
+		return fs.Parse([]string{})
+	}
+
+	for name, run := range map[string]func() error{
+		"cli": fromCLI, "config": fromConfig, "env": fromEnv,
+	} {
+		if err := run(); err == nil {
+			t.Errorf("%s: accepted a control character; every source must screen alike", name)
+		}
+	}
+}
+
+// TestScreening_ConfigArrayNonStringElements checks that a non-string element
+// falls through screening to the element setter, which is what reports the type
+// mismatch. Screening must not shadow that error with one of its own.
+func TestScreening_ConfigArrayNonStringElements(t *testing.T) {
+	fs := New("app")
+	fs.StringSlice("tags", []string{"default"}, "")
+	fs.SetConfigFile(writeConfig(t, `{"tags":["ok",42]}`))
+	err := fs.Parse([]string{})
+	if err == nil {
+		t.Fatal("Parse accepted a number inside a string slice")
+	}
+	if !strings.Contains(err.Error(), "expected string array") {
+		t.Errorf("error = %v, want the element setter's type error", err)
+	}
+}

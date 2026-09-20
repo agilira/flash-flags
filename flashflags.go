@@ -996,12 +996,11 @@ func (fs *FlagSet) setFloat64Value(flag *Flag, value, name string) error {
 func (fs *FlagSet) setStringSliceValue(flag *Flag, value string) error {
 	slice := fs.parseStringSlice(value)
 
-	// Apply security validation to each item in the slice
-	for i, item := range slice {
-		if err := fs.validateInputHygiene(flag.name+"["+strconv.Itoa(i)+"]", item); err != nil {
-			return fmt.Errorf("string slice item validation failed: %v", err)
-		}
-	}
+	// WHY no per-element screening here: the caller screened the whole value
+	// before it was split, and input hygiene is a per-character property, so no
+	// element can fail a check the joined string already passed. The config
+	// file path does need it, because a JSON array never passes through this
+	// function -- see screenConfigValue.
 
 	// Additional validation for slice size (DoS protection)
 	if len(slice) > 10000 {
@@ -2511,11 +2510,8 @@ func (fs *FlagSet) setFlagValueFromConfig(name string, value interface{}) error 
 		return nil
 	}
 
-	// Apply security validation for string values from config
-	if strValue, ok := value.(string); ok {
-		if err := fs.validateInputHygiene(name, strValue); err != nil {
-			return fmt.Errorf("config security validation failed: %v", err)
-		}
+	if err := fs.screenConfigValue(name, value); err != nil {
+		return err
 	}
 
 	// Set value based on type using dedicated functions
@@ -2528,6 +2524,36 @@ func (fs *FlagSet) setFlagValueFromConfig(name string, value interface{}) error 
 
 	// Validate the value if validator is set
 	return fs.validateFlagValue(flag)
+}
+
+// screenConfigValue applies input hygiene to a value decoded from a config
+// file. JSON carries strings in two shapes, and both reach a flag: a bare
+// string, and the elements of an array bound to a string slice.
+//
+// WHY both: until v1.1.9 only the bare string was screened, so
+// {"tags": ["bad\u0000item"]} reached the flag untouched while
+// --tags "bad\x00item" was rejected. Whether a value is accepted must not
+// depend on which layer supplied it.
+//
+// Numbers and booleans need no screening: they cannot carry a byte sequence.
+func (fs *FlagSet) screenConfigValue(name string, value interface{}) error {
+	switch v := value.(type) {
+	case string:
+		if err := fs.validateInputHygiene(name, v); err != nil {
+			return fmt.Errorf("config security validation failed: %v", err)
+		}
+	case []interface{}:
+		for i, item := range v {
+			str, ok := item.(string)
+			if !ok {
+				continue // type mismatch is reported by the element setter
+			}
+			if err := fs.validateInputHygiene(name+"["+strconv.Itoa(i)+"]", str); err != nil {
+				return fmt.Errorf("config security validation failed: %v", err)
+			}
+		}
+	}
+	return nil
 }
 
 // setConfigValueByType sets the flag value from config based on its type
