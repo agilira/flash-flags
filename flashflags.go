@@ -546,6 +546,13 @@ func (fs *FlagSet) BoolVar(name, shortKey string, defaultValue bool, usage strin
 //
 // Returns an error during parsing if the duration format is invalid.
 func (fs *FlagSet) Duration(name string, defaultValue time.Duration, usage string) *time.Duration {
+	return fs.DurationVar(name, "", defaultValue, usage)
+}
+
+// DurationVar defines a duration flag with a short key, the same way StringVar
+// does for strings. The flag can be set as --name value, --name=value or
+// -shortKey value. An empty shortKey registers the long form only.
+func (fs *FlagSet) DurationVar(name, shortKey string, defaultValue time.Duration, usage string) *time.Duration {
 	value := defaultValue
 	flag := &Flag{
 		name:         name,
@@ -554,16 +561,27 @@ func (fs *FlagSet) Duration(name string, defaultValue time.Duration, usage strin
 		flagType:     "duration",
 		source:       sourceDefault,
 		usage:        usage,
+		shortKey:     shortKey,
 		validator:    nil,
 		defaultValue: defaultValue,
 	}
 	fs.flags[name] = flag
+	if shortKey != "" {
+		fs.shortMap[shortKey] = flag
+	}
 	return &value
 }
 
 // Float64 defines a float64 flag with the specified name, default value, and usage string.
 // The return value is a pointer to a float64 variable that stores the value of the flag.
 func (fs *FlagSet) Float64(name string, defaultValue float64, usage string) *float64 {
+	return fs.Float64Var(name, "", defaultValue, usage)
+}
+
+// Float64Var defines a float64 flag with a short key, the same way StringVar
+// does for strings. The flag can be set as --name value, --name=value or
+// -shortKey value. An empty shortKey registers the long form only.
+func (fs *FlagSet) Float64Var(name, shortKey string, defaultValue float64, usage string) *float64 {
 	value := defaultValue
 	flag := &Flag{
 		name:         name,
@@ -572,10 +590,14 @@ func (fs *FlagSet) Float64(name string, defaultValue float64, usage string) *flo
 		flagType:     "float64",
 		source:       sourceDefault,
 		usage:        usage,
+		shortKey:     shortKey,
 		validator:    nil,
 		defaultValue: defaultValue,
 	}
 	fs.flags[name] = flag
+	if shortKey != "" {
+		fs.shortMap[shortKey] = flag
+	}
 	return &value
 }
 
@@ -603,6 +625,16 @@ func (fs *FlagSet) Float64(name string, defaultValue float64, usage string) *flo
 //
 // Spaces around commas are not trimmed. Use "a, b, c" carefully as it will include spaces.
 func (fs *FlagSet) StringSlice(name string, defaultValue []string, usage string) *[]string {
+	return fs.StringSliceVar(name, "", defaultValue, usage)
+}
+
+// StringSliceVar defines a string slice flag with a short key, the same way
+// StringVar does for strings. The flag can be set as --name a,b, --name=a,b or
+// -shortKey a,b. An empty shortKey registers the long form only.
+//
+// As with StringSlice, the default is copied, so the caller's slice is never
+// aliased by the value the parser writes into.
+func (fs *FlagSet) StringSliceVar(name, shortKey string, defaultValue []string, usage string) *[]string {
 	value := make([]string, len(defaultValue))
 	copy(value, defaultValue)
 	flag := &Flag{
@@ -612,10 +644,14 @@ func (fs *FlagSet) StringSlice(name string, defaultValue []string, usage string)
 		flagType:     "stringSlice",
 		source:       sourceDefault,
 		usage:        usage,
+		shortKey:     shortKey,
 		validator:    nil,
 		defaultValue: defaultValue,
 	}
 	fs.flags[name] = flag
+	if shortKey != "" {
+		fs.shortMap[shortKey] = flag
+	}
 	return &value
 }
 
@@ -737,9 +773,30 @@ func (fs *FlagSet) processArgument(args []string, i int) (int, error) {
 	return 0, nil
 }
 
-// isHelpFlag checks if the argument is a help flag
+// isHelpFlag reports whether the argument should be handled as the built-in
+// help flag.
+//
+// WHY it consults the registered flags: --help and -h are a convenience the
+// parser offers, not names it reserves. Intercepting them unconditionally made
+// a flag registered under either spelling unreachable -- StringVar("host", "h",
+// ...) could never be set with -h, because Parse printed the help text and
+// returned "help requested" before the short key was ever looked up. A caller
+// that registers one of these names means it, so the built-in yields and the
+// argument is parsed like any other.
+//
+// The two spellings are judged independently: claiming --help as a flag name
+// leaves -h to the built-in, and claiming the short key "h" leaves --help to it.
 func (fs *FlagSet) isHelpFlag(arg string) bool {
-	return arg == "--help" || arg == "-h"
+	switch arg {
+	case "--help":
+		_, claimed := fs.flags["help"]
+		return !claimed
+	case "-h":
+		_, claimed := fs.shortMap["h"]
+		return !claimed
+	default:
+		return false
+	}
 }
 
 // isShortFlag checks if the argument is a short flag (includes -f, -f=value, -abc)
