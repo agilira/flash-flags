@@ -36,4 +36,6 @@ jobs:
       run: go install github.com/securego/gosec/v2/cmd/gosec@latest
 
     - name: Security Scan
-      run: gosec --exclude=G104,G306,G301 ./...
+      # Exclusions live in .gosec.json, shared with ci.yml. This is a hard gate:
+      # a finding fails the PR.
+      run: gosec -conf .gosec.json ./...

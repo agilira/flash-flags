@@ -1,0 +1,11 @@
+{
+  "_comment": "gosec configuration. Single source of truth for the exclusions used by both .github/workflows/pr.yml (hard gate) and ci.yml (informational). Keep them in sync by pointing both at this file rather than repeating --exclude flags. Do not set global.nosec or global.audit here: gosec reads \"nosec\": \"enabled\" as ignore the #nosec annotations, which resurfaces findings that carry a written justification in the source.",
+  "_exclusions": {
+    "G104": "Unhandled errors. Deliberate on os.Stat probes during config discovery and on deferred Close of read-only files, where there is nothing to recover from.",
+    "G301": "Directory permissions. Only reached from test helpers creating temporary trees.",
+    "G306": "WriteFile permissions. Only reached from test helpers writing temporary config fixtures."
+  },
+  "global": {
+    "exclude": "G104,G301,G306"
+  }
+}
