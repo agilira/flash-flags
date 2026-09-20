@@ -4,8 +4,28 @@
 // Series: an AGILira library
 // SPDX-License-Identifier: MPL-2.0
 
-// Package flashflags provides ultra-fast, zero-dependency, lock-free command-line flag parsing.
+// Package flashflags provides ultra-fast, zero-dependency command-line flag parsing.
 // This library is extracted from argus with exactly the same structure for maximum performance.
+//
+// # Concurrency
+//
+// A FlagSet is not internally synchronized: it holds no mutexes and performs no
+// atomic operations, which is what keeps reads down to a plain map lookup.
+// The guarantee it offers is the one a flag set actually needs:
+//
+//   - Reads are safe from any number of goroutines once Parse has returned,
+//     because nothing mutates the flag set afterwards. This covers Lookup, Value,
+//     Changed, Source, the Get* accessors and the pointers returned at
+//     declaration time.
+//   - Mutating calls are not safe to run concurrently with anything. These are
+//     Parse, LoadConfig, LoadEnvironmentVariables, Reset, ResetFlag and every
+//     Set* configuration method. Declare, configure and parse from a single
+//     goroutine -- normally the one running main -- before sharing the FlagSet.
+//
+// Calling Reset while another goroutine reads is a data race and will be
+// reported by the race detector. If an application needs to re-parse at runtime,
+// it must provide its own synchronization, or build a fresh FlagSet and swap it
+// behind a pointer.
 package flashflags
 
 import (
@@ -31,7 +51,9 @@ import (
 //	}
 //
 // Flags support validation, dependencies, grouping, and environment variable integration.
-// All operations are lock-free and safe for concurrent access.
+// A Flag is safe for concurrent reads once Parse has returned; it is not safe to
+// read while any goroutine mutates the owning FlagSet. See the package
+// documentation on concurrency.
 type Flag struct {
 	name         string
 	value        interface{}
@@ -131,11 +153,21 @@ func (f *Flag) ShortKey() string { return f.shortKey }
 // SetValidator sets a validation function for the flag.
 // The validator will be called whenever the flag value is set or changed.
 //
+// The validator receives the value boxed in an interface{}. Always use the
+// comma-ok form of the type assertion: a bare val.(int) panics, and a panic
+// inside a validator propagates out of Parse and terminates the program. The
+// dynamic type matches the flag's declared type -- int for Int, time.Duration
+// for Duration, []string for StringSlice -- so a failed assertion means the
+// validator was attached to the wrong flag.
+//
 // Example:
 //
 //	flag := fs.Lookup("port")
 //	flag.SetValidator(func(val interface{}) error {
-//		port := val.(int)
+//		port, ok := val.(int)
+//		if !ok {
+//			return fmt.Errorf("expected int, got %T", val)
+//		}
 //		if port < 1024 {
 //			return fmt.Errorf("port must be >= 1024")
 //		}
@@ -251,12 +283,17 @@ func (f *Flag) resetStringSlicePointer() {
 }
 
 // FlagSet represents a collection of command-line flags with parsing and validation capabilities.
-// It implements ultra-fast flag set handling using only the standard library with lock-free operations.
+// It implements ultra-fast flag set handling using only the standard library.
 //
 // FlagSet supports multiple configuration sources in priority order:
 //  1. Command-line arguments (highest priority)
 //  2. Environment variables
-//  3. Configuration files (lowest priority)
+//  3. Configuration files
+//  4. Defaults given at declaration (lowest priority)
+//
+// A higher-priority source always wins, whatever order the loaders run in: a
+// value found in the config file does not suppress the matching environment
+// variable. Use Source to find out which layer supplied a given value.
 //
 // Example usage:
 //
@@ -270,7 +307,9 @@ func (f *Flag) resetStringSlicePointer() {
 //
 //	fmt.Printf("Server starting on %s:%d\n", *host, *port)
 //
-// All FlagSet operations are thread-safe and use lock-free algorithms for optimal performance.
+// A FlagSet is safe for concurrent reads once Parse has returned, and is not
+// internally synchronized for writes. See the package documentation on
+// concurrency.
 type FlagSet struct {
 	flags           map[string]*Flag // Long flag name -> Flag
 	shortMap        map[string]*Flag // Short flag key -> Flag
@@ -290,7 +329,9 @@ type FlagSet struct {
 // Returns a FlagSet with zero external dependencies.
 //
 // Thread Safety:
-// All FlagSet operations are thread-safe and use lock-free algorithms for optimal performance.
+// A FlagSet is safe for concurrent reads once Parse has returned, and is not
+// internally synchronized for writes. See the package documentation on
+// concurrency.
 // Multiple goroutines can safely read flag values concurrently after parsing is complete.
 // However, Parse() should only be called once from a single goroutine.
 //
@@ -1042,12 +1083,12 @@ func (fs *FlagSet) validateInputHygiene(name, value string) error {
 		return fmt.Errorf("flag --%s value too long: %d chars (max: %d)", name, valueLen, maxValueLength)
 	}
 
-	// Fast path: empty or very short values are usually safe
 	if valueLen == 0 {
 		return nil
 	}
 
-	// Fast path: simple alphanumeric values are safe
+	// Fast path: a simple alphanumeric value cannot contain a null byte or a
+	// control character, so the full scan would find nothing.
 	if valueLen < 100 && isSimpleAlphanumeric(value) {
 		return nil
 	}
@@ -1268,7 +1309,10 @@ func (fs *FlagSet) Source(name string) string {
 //	port := fs.IntVar("port", "p", 8080, "Server port")
 //
 //	err := fs.SetValidator("port", func(val interface{}) error {
-//		port := val.(int)
+//		port, ok := val.(int)
+//		if !ok {
+//			return fmt.Errorf("expected int, got %T", val)
+//		}
 //		if port < 1024 || port > 65535 {
 //			return fmt.Errorf("port must be between 1024-65535, got %d", port)
 //		}
@@ -1277,6 +1321,9 @@ func (fs *FlagSet) Source(name string) string {
 //	if err != nil {
 //		log.Fatal(err)
 //	}
+//
+// Use the comma-ok form of the type assertion as shown: a bare val.(int) panics
+// on mismatch, and that panic propagates out of Parse.
 //
 // Returns an error if the flag name doesn't exist.
 func (fs *FlagSet) SetValidator(name string, validator func(interface{}) error) error {
@@ -2227,7 +2274,7 @@ func (fs *FlagSet) loadConfigFromFile(path string) error {
 		return fmt.Errorf("config file %s is not a regular file", path)
 	}
 
-	data, err := os.ReadFile(path) // #nosec G304 - path is validated above
+	data, err := os.ReadFile(path) // #nosec G304 -- application-supplied path, never parsed input; see the comment above
 	if err != nil {
 		return fmt.Errorf("failed to read config file %s: %v", path, err)
 	}

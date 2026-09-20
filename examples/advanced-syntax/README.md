@@ -75,7 +75,7 @@ flash-flags maintains superior performance while providing full POSIX/GNU syntax
 
 - **33% faster than pflags** in benchmarks
 - **Zero-allocation parsing** for optimal performance
-- **Lock-free architecture** for concurrent safety
+- **No runtime synchronization** — safe for concurrent reads once `Parse()` has returned
 
 ## Implementation Notes
 

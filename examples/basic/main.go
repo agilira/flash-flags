@@ -115,7 +115,10 @@ func main() {
 
 	// Set validation for log level
 	if err := fs.SetValidator("log-level", func(val interface{}) error {
-		level := val.(string)
+		level, ok := val.(string)
+		if !ok {
+			return fmt.Errorf("expected string, got %T", val)
+		}
 		validLevels := []string{"debug", "info", "warn", "error"}
 		for _, valid := range validLevels {
 			if level == valid {
@@ -130,7 +133,10 @@ func main() {
 
 	// Set validation for port range
 	if err := fs.SetValidator("port", func(val interface{}) error {
-		port := val.(int)
+		port, ok := val.(int)
+		if !ok {
+			return fmt.Errorf("expected int, got %T", val)
+		}
 		if port < 1 || port > 65535 {
 			return fmt.Errorf("port must be between 1 and 65535, got %d", port)
 		}

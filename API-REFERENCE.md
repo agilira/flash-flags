@@ -2,7 +2,7 @@
 ### an AGILira library
 
 **Version**: v1.1.5  
-**Go Version**: 1.23+  
+**Go Version**: 1.25.9+  
 **License**: MPL-2.0
 
 This document provides comprehensive API documentation for Flash-Flags, covering all public types, functions, and interfaces.
@@ -35,7 +35,7 @@ This document provides comprehensive API documentation for Flash-Flags, covering
 7. [Flag Inspection](#flag-inspection)
 8. [Utility Functions](#utility-functions)
 9. [Interfaces](#interfaces)
-10. [Security](#security)
+10. [Input Screening](#input-screening)
 
 ---
 
@@ -65,9 +65,10 @@ fs := flashflags.New("myapp")
 ```
 
 **Thread Safety:**
-- All FlagSet operations are thread-safe and use lock-free algorithms
-- Multiple goroutines can safely read flag values concurrently after parsing
-- `Parse()` should only be called once from a single goroutine
+- A `FlagSet` holds no mutexes and performs no atomic operations
+- Multiple goroutines can safely read flag values concurrently **once `Parse()` has returned**
+- Every mutating call — flag registration, `Set*`, `Parse`, `LoadConfig`, `LoadEnvironmentVariables`, `Reset`, `ResetFlag` — must happen on a single goroutine before the flag set is shared
+- Calling `Reset()` or `ResetFlag()` while another goroutine reads is a data race and `go test -race` will report it
 
 ---
 
@@ -109,8 +110,9 @@ Returns the current flag value as `interface{}`. Use type assertion to convert t
 ```go
 flag := fs.Lookup("port")
 if flag != nil && flag.Type() == "int" {
-    port := flag.Value().(int)
-    fmt.Printf("Port value: %d\n", port)
+    if port, ok := flag.Value().(int); ok {
+        fmt.Printf("Port value: %d\n", port)
+    }
 }
 ```
 
@@ -130,8 +132,9 @@ Returns the flag type as a string.
 ```go
 flag := fs.Lookup("timeout")
 if flag.Type() == "duration" {
-    dur := flag.Value().(time.Duration)
-    fmt.Printf("Timeout: %v\n", dur)
+    if dur, ok := flag.Value().(time.Duration); ok {
+        fmt.Printf("Timeout: %v\n", dur)
+    }
 }
 ```
 
@@ -156,6 +159,30 @@ if flag.Changed() {
     fmt.Println("Port is using default value")
 }
 ```
+
+---
+
+##### Source
+```go
+func (f *Flag) Source() string
+```
+
+Returns the configuration source that supplied the flag's current value.
+
+Sources are resolved by precedence, so the returned name is the **highest-priority**
+source that set the flag, not merely the last one consulted. A flag present in both
+the config file and the environment reports `"env"`.
+
+**Returns:**
+- `string`: One of `"cli"`, `"env"`, `"config"`, `"default"`
+
+**Example:**
+```go
+flag := fs.Lookup("port")
+fmt.Printf("port=%v (from %s)\n", flag.Value(), flag.Source())
+```
+
+*Added in v1.1.9.*
 
 ---
 
@@ -211,13 +238,19 @@ Sets a validation function for the flag. The validator will be called whenever t
 ```go
 flag := fs.Lookup("port")
 flag.SetValidator(func(val interface{}) error {
-    port := val.(int)
+    port, ok := val.(int)
+    if !ok {
+        return fmt.Errorf("expected int, got %T", val)
+    }
     if port < 1024 {
         return fmt.Errorf("port must be >= 1024")
     }
     return nil
 })
 ```
+
+> Always use the comma-ok form of the type assertion. A bare `val.(int)` panics on
+> mismatch, and the panic propagates out of `Parse()` and terminates the program.
 
 ---
 
@@ -527,9 +560,14 @@ func (fs *FlagSet) Parse(args []string) error
 Parses command line arguments with optimized allocations and validates all constraints.
 
 **Processing order (priority from lowest to highest):**
-1. Configuration files (lowest priority)
-2. Environment variables
-3. Command-line arguments (highest priority)
+1. Defaults given at declaration (lowest priority)
+2. Configuration files
+3. Environment variables
+4. Command-line arguments (highest priority)
+
+A higher-priority source always wins, whatever order the loaders run in: a value
+found in the config file does not suppress the matching environment variable.
+Use [`Source`](#source-1) to find out which layer supplied a given value.
 
 **Parameters:**
 - `args` ([]string): Command line arguments (typically `os.Args[1:]`)
@@ -658,12 +696,14 @@ third := fs.Arg(2)   // Returns ""
 func (fs *FlagSet) SetConfigFile(path string)
 ```
 
-Sets an explicit configuration file path. The config file is loaded automatically during `Parse()` with lower priority than CLI arguments.
+Sets an explicit configuration file path. The config file is loaded automatically during `Parse()`. It is the lowest-priority source above the declared defaults, so both environment variables and CLI arguments override it.
 
 **Parameters:**
 - `path` (string): Path to configuration file
 
 **Supported format:** JSON with flag names as keys
+
+**Type mapping:** `string` → string, JSON number → `int` / `float64`, `true`/`false` → bool, array of strings → `[]string`. JSON has no duration type, so a duration flag accepts either the string form understood by `time.ParseDuration` (`"30s"`, `"1m30s"`) or a plain number of nanoseconds.
 
 **Example config file (myapp.json):**
 ```json
@@ -683,7 +723,11 @@ fs.SetConfigFile("./config/myapp.json")
 // File will be loaded automatically during Parse()
 ```
 
-**Security:** Path validation prevents directory traversal attacks.
+**Path handling:** The path must point at a regular file; a directory, a FIFO or a device is refused. Nothing else about the path is checked, because the path comes from your program, never from parsed arguments — `LoadConfig` runs before argument parsing, so no `--config` value can reach it.
+
+> **Changed in v1.1.9.** A prefix allowlist (`/tmp/`, `/opt/`, `/etc/`, `/var/tmp/`, `/var/folders/`) previously rejected every other absolute path, including the user's own home directory — the location `AddConfigPath`'s example uses — and any path containing `..`, including a directory merely named `v1..2`. It has been removed. The regular-file check that replaced it closes a hang the allowlist permitted: a FIFO under `/tmp` passed validation, and reading one blocks `Parse` until a writer appears.
+
+This is a robustness check, not a security boundary: it races against a concurrent replacement of the path, and symlinks are followed. If your program derives the config path from untrusted input, validate and confine it before calling `SetConfigFile`.
 
 ---
 
@@ -702,18 +746,26 @@ Adds a directory to search for configuration files during auto-discovery.
 - `{program-name}.config.json` (e.g., `"myapp.config.json"`)
 - `config.json`
 
-**Default search paths (if none added):**
-- `"."` (current directory)
-- `"./config"`
-- `$HOME`
+**No default search paths.** Discovery only visits directories added here, plus the file named by `SetConfigFile`. A `FlagSet` with neither loads no configuration, so a stray `config.json` in the working directory cannot alter a program that never opted into configuration files.
+
+> **Changed in v1.1.9.** This section previously documented `"."`, `"./config"` and `$HOME` as defaults. `LoadConfig` returns early when no config file and no paths are set, so that list was unreachable — the coverage profile showed the branch at zero hits on the full suite. It has been removed rather than implemented: silently loading `./<name>.json` for programs that never asked is not a default worth having.
+
+**Paths are not expanded.** The string is used as given, so `"$HOME/.myapp"` looks for a directory literally named `$HOME`. Resolve the home directory in your own code.
 
 **Example:**
 ```go
 fs := flashflags.New("myapp")
-fs.AddConfigPath("./config")        // ./config/myapp.json
-fs.AddConfigPath("/etc/myapp")      // /etc/myapp/myapp.json
-fs.AddConfigPath(os.Getenv("HOME")) // $HOME/myapp.json
+fs.AddConfigPath("./config")   // ./config/myapp.json
+fs.AddConfigPath("/etc/myapp") // /etc/myapp/myapp.json
+
+// os.UserHomeDir, not os.Getenv("HOME"): HOME is normally unset on Windows,
+// where the home directory lives in USERPROFILE.
+if home, err := os.UserHomeDir(); err == nil {
+    fs.AddConfigPath(home)     // $HOME/myapp.json
+}
 ```
+
+Added paths are searched in the order they were added, each probed for every candidate filename before moving on.
 
 ---
 
@@ -875,7 +927,10 @@ fs := flashflags.New("myapp")
 port := fs.IntVar("port", "p", 8080, "Server port")
 
 err := fs.SetValidator("port", func(val interface{}) error {
-    port := val.(int)
+    port, ok := val.(int)
+    if !ok {
+        return fmt.Errorf("expected int, got %T", val)
+    }
     if port < 1024 || port > 65535 {
         return fmt.Errorf("port must be between 1024-65535, got %d", port)
     }
@@ -1257,6 +1312,31 @@ if fs.Changed("debug") {
 
 ---
 
+### Source
+```go
+func (fs *FlagSet) Source(name string) string
+```
+
+Returns the configuration source that supplied the named flag's current value.
+This is the quickest way to debug precedence: it tells you not just that a flag
+changed, but which layer won.
+
+**Parameters:**
+- `name` (string): Flag name
+
+**Returns:**
+- `string`: One of `"cli"`, `"env"`, `"config"`, `"default"`. Unknown flags report `"default"`.
+
+**Example:**
+```go
+fs.Parse(os.Args[1:])
+fmt.Println(fs.GetInt("port"), "from", fs.Source("port")) // 3000 from env
+```
+
+*Added in v1.1.9.*
+
+---
+
 ## Utility Functions
 
 ### GetString
@@ -1482,26 +1562,29 @@ adapter.VisitAll(func(flag flashflags.ConfigFlag) {
 
 ---
 
-## Security
+## Input Screening
 
-Flash-flags provides comprehensive security validation for all input values.
+Flag values are screened for input that is malformed as a string, whatever it is later used for.
 
-### Security Features
+### What is checked
 
-- **Command Injection Protection**: Blocks `$(...)`, backticks, shell metacharacters
-- **Path Traversal Prevention**: Prevents `../` and `..\\` sequences
-- **Buffer Overflow Safeguards**: 10KB input limits
-- **Format String Attack Blocking**: Detects `%n`, `%s` patterns
-- **Input Sanitization**: Removes null bytes and control characters
-- **Windows Device Protection**: Blocks `CON`, `PRN`, `AUX`, etc.
+- **Length**: values above 10000 bytes are rejected
+- **Null bytes**: `\x00` is rejected — it truncates the string in any C API it reaches
+- **Control characters**: C0 controls other than `\t`, `\n`, `\r` are rejected — terminal escape sequences, not data
+
+### What is deliberately not checked
+
+A flag parser does not know whether a value will reach a shell, a SQL driver, an `fmt` verb or a file open, so it does not guess. Shell metacharacters, SQL fragments, absolute or relative paths and format verbs all pass through unchanged. Escaping belongs at the point of use: run `os/exec` without a shell, parameterize SQL, resolve and confine paths before opening them.
+
+> **Changed in v1.1.9.** The screening previously also rejected values containing `/etc/`, `/proc/`, `/sys/`, `rm -rf`, `drop table`, `$(`, a backtick, the `%n %s %x %d %c %p` format verbs, `../` and Windows device names. That denylist stopped no attack — `a; rm -rf ~`, `deploy && restart` and `..%2f..%2fetc` all passed it untouched — while rejecting ordinary input such as `--config /etc/myapp.conf`. It has been removed.
 
 ### Fast-Path Optimization
 
-Simple alphanumeric values (`a-z`, `A-Z`, `0-9`, `-`, `_`, `.`, `:`) bypass heavy validation for optimal performance.
+Values under 100 bytes made only of `a-z`, `A-Z`, `0-9`, `-`, `_`, `.`, `:` skip the scan entirely: such a value cannot contain a null byte or a control character.
 
-### Security Overhead
+### Overhead
 
-Only 132ns per operation (17%) for complete protection.
+Roughly 132ns per operation (17%).
 
 ### Example
 
@@ -1509,10 +1592,14 @@ Only 132ns per operation (17%) for complete protection.
 fs := flashflags.New("myapp")
 cmd := fs.String("command", "", "Command to execute")
 
-// These will be rejected with security errors:
-fs.Parse([]string{"--command", "rm -rf /"})           // Command injection
-fs.Parse([]string{"--command", "../../etc/passwd"})   // Path traversal
-fs.Parse([]string{"--command", "%n%n%n%n"})          // Format string attack
+// Rejected — malformed as a string:
+fs.Parse([]string{"--command", "bad\x00value"})   // null byte
+fs.Parse([]string{"--command", "\x1b[31mred"})    // control character
+
+// Accepted — the parser does not guess what these mean:
+fs.Parse([]string{"--command", "rm -rf /tmp/build"})
+fs.Parse([]string{"--command", "/etc/myapp.conf"})
+fs.Parse([]string{"--command", "a; rm -rf ~"})
 ```
 
 ---
@@ -1532,8 +1619,8 @@ Flash-flags returns descriptive errors for various scenarios:
 | Type conversion | `"invalid int value for flag --port: abc"` |
 | Config error | `"config file error: failed to read config.json"` |
 | Help | `"help requested"` (special case) |
-| Security | `"flag --name contains dangerous pattern"` |
-| Buffer overflow | `"flag --data value too long: 15000 chars (max: 10000)"` |
+| Input screening | `"flag --name contains null byte at position 3"` |
+| Over length | `"flag --data value too long: 15000 chars (max: 10000)"` |
 
 All errors include the flag name and specific details for debugging.
 
@@ -1544,13 +1631,13 @@ All errors include the flag name and specific details for debugging.
 ### Benchmark Results
 
 ```
-AMD Ryzen 5 7520U, Go 1.23+, v1.1.5:
+AMD Ryzen 5 7520U, Go 1.25.9+:
   Flash-flags (secure):      924 ns/op    (with full security validation)
   Go standard library flag:  792 ns/op    (baseline, no security)
   Spf13/pflag:             1,322 ns/op    (43% slower than flash-flags)
 ```
 
-**Security overhead:** Only 132ns (17%) for complete protection
+**Screening overhead:** roughly 132ns (17%)
 
 ### Internal Performance
 
@@ -1563,18 +1650,18 @@ BenchmarkGetters/GetDuration  134M    8.86 ns/op   0 B/op   0 allocs/op
 
 ### Key Characteristics
 
-- 924ns with full security hardening
+- 924ns with input screening enabled
 - 43% faster than pflag
 - Sub-nanosecond flag value access (8-9ns)
 - Zero allocations for getter operations
-- Lock-free concurrent reads
+- Unsynchronized concurrent reads once `Parse()` has returned (see Thread Safety)
 - O(1) hash-based flag lookup
 
 ---
 
 ## Version History
 
-**Current version:** v1.1.5 (October 2025)
+**Current version:** v1.1.9
 
 See `changelog/` directory for version history.
 
