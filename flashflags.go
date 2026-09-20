@@ -70,6 +70,7 @@ type Flag struct {
 	dependencies []string                // Flags that this flag depends on
 	group        string                  // Group name for help organization
 	envVar       string                  // Environment variable name for this flag
+	confineTo    string                  // Directory this path-valued flag is confined to, if any
 }
 
 // Name returns the flag name.
@@ -1192,6 +1193,9 @@ func (fs *FlagSet) setFlagValueByType(flag *Flag, value, name string) error {
 
 // validateFlag runs validation on the flag if a validator is set
 func (fs *FlagSet) validateFlag(flag *Flag, name string) error {
+	if err := fs.checkConfinement(flag, name); err != nil {
+		return err
+	}
 	if flag.validator != nil {
 		if err := flag.validator(flag.value); err != nil {
 			return fmt.Errorf("validation failed for flag --%s: %v", name, err)
@@ -2581,6 +2585,9 @@ func (fs *FlagSet) setConfigValueByType(flag *Flag, value interface{}, name stri
 
 // validateFlagValue validates a flag value using its validator function
 func (fs *FlagSet) validateFlagValue(flag *Flag) error {
+	if err := fs.checkConfinement(flag, flag.name); err != nil {
+		return err
+	}
 	if flag.validator != nil {
 		return flag.validator(flag.value)
 	}
