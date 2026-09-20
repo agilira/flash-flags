@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -2057,11 +2056,15 @@ func (fs *FlagSet) SetConfigFile(path string) {
 //	fs := flashflags.New("myapp")
 //	fs.AddConfigPath("./config")        // ./config/myapp.json
 //	fs.AddConfigPath("/etc/myapp")      // /etc/myapp/myapp.json
-//	fs.AddConfigPath(os.Getenv("HOME")) // $HOME/myapp.json
+//	home, _ := os.UserHomeDir()
+//	fs.AddConfigPath(home)              // $HOME/myapp.json
 //
 //	// First found config file will be loaded during Parse()
 //
-// If no paths are added, auto-discovery searches: ".", "./config", "$HOME"
+// Auto-discovery only runs for paths added here, or for the file named by
+// SetConfigFile. A FlagSet with neither loads no configuration at all, so a
+// stray config.json in the working directory cannot alter a program that never
+// opted into configuration files.
 func (fs *FlagSet) AddConfigPath(path string) {
 	fs.configPaths = append(fs.configPaths, path)
 }
@@ -2194,13 +2197,13 @@ func (fs *FlagSet) findConfigFile() string {
 		"config.json",
 	}
 
-	searchPaths := fs.configPaths
-	if len(searchPaths) == 0 {
-		// Default search paths
-		searchPaths = []string{".", "./config", os.Getenv("HOME")}
-	}
-
-	for _, dir := range searchPaths {
+	// WHY no default search paths: LoadConfig returns early unless the
+	// application set a config file or added at least one path, so a default
+	// list here was unreachable -- the coverage profile showed the branch at
+	// zero hits. Implementing it instead would mean a program that never opted
+	// into configuration files silently loading ./<name>.json if one happened
+	// to sit in the working directory, which is not a default worth having.
+	for _, dir := range fs.configPaths {
 		for _, name := range configNames {
 			path := filepath.Join(dir, name)
 			if _, err := os.Stat(path); err == nil {
@@ -2212,64 +2215,35 @@ func (fs *FlagSet) findConfigFile() string {
 	return ""
 }
 
-// isSafeAbsolutePath checks if an absolute path is safe for config files.
-// WHY: We allowlist known-safe prefixes so that arbitrary absolute paths
-// (e.g. /root/.ssh/authorized_keys) cannot be loaded as config.
-// Cross-platform: handles both Unix and Windows path conventions.
-func isSafeAbsolutePath(path string) bool {
-	// Normalise to forward slashes for uniform prefix matching
-	cleaned := filepath.ToSlash(filepath.Clean(path))
-
-	// Unix safe prefixes
-	unixSafe := []string{
-		"/tmp/",         // Linux/Unix temp
-		"/opt/",         // Optional software
-		"/etc/",         // System configuration
-		"/var/folders/", // macOS temp
-		"/var/tmp/",     // System temp
-	}
-
-	for _, prefix := range unixSafe {
-		if strings.HasPrefix(cleaned, prefix) {
-			return true
-		}
-	}
-
-	// Windows safe prefixes (drive-letter agnostic)
-	if runtime.GOOS == "windows" {
-		upper := strings.ToUpper(cleaned)
-		// Strip drive letter (e.g. "C:") for prefix comparison
-		if len(upper) >= 2 && upper[1] == ':' {
-			upper = upper[2:]
-		}
-		winSafe := []string{
-			"/PROGRAMDATA/", // system-wide app data
-			"/USERS/",       // user home trees
-			"/TEMP/",        // common temp alias
-			"/TMP/",         // common temp alias
-		}
-		for _, prefix := range winSafe {
-			if strings.HasPrefix(upper, prefix) {
-				return true
-			}
-		}
-	}
-
-	return false
-}
-
-// loadConfigFromFile loads and applies configuration from a JSON file
+// loadConfigFromFile loads and applies configuration from a JSON file.
+//
+// WHY there is no path allowlist: the path comes from the application itself.
+// SetConfigFile and AddConfigPath are called by the program, and LoadConfig runs
+// before parseArguments, so no command-line value can ever reach here. Until
+// v1.1.9 this function rejected any path containing ".." and any absolute path
+// outside a five-prefix allowlist. That blocked the user's own home directory --
+// the location AddConfigPath's documentation uses as its example -- and a
+// directory merely named "v1..2", while still allowing /tmp, the one
+// world-writable prefix on the list and therefore the only one where planting a
+// symlink is worth anything.
+//
+// What is checked instead is that the target is a regular file. Reading a
+// character device such as /dev/zero as configuration exhausts memory, and
+// opening a FIFO blocks Parse until a writer appears -- an unkillable hang that
+// the old allowlist permitted, since a FIFO under /tmp passed it. os.Stat
+// answers both questions without opening anything.
+//
+// This is a robustness check, not a security boundary. It is inherently racy
+// against a concurrent replacement of the path, and symlinks are followed. An
+// application that derives the config path from untrusted input must validate
+// and confine it before calling SetConfigFile.
 func (fs *FlagSet) loadConfigFromFile(path string) error {
-	// Validate path to prevent directory traversal attacks
-	if strings.Contains(path, "..") {
-		return fmt.Errorf("invalid config file path: %s", path)
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("failed to read config file %s: %v", path, err)
 	}
-
-	// WHY filepath.IsAbs: the old HasPrefix(path, "/") missed Windows
-	// absolute paths like C:\config.json -- an attacker could bypass the
-	// allowlist entirely on Windows.
-	if filepath.IsAbs(path) && !isSafeAbsolutePath(path) {
-		return fmt.Errorf("invalid config file path: %s", path)
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("config file %s is not a regular file", path)
 	}
 
 	data, err := os.ReadFile(path) // #nosec G304 - path is validated above

@@ -9,7 +9,7 @@ package flashflags
 import (
 	"fmt"
 	"os"
-	"runtime"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -3031,95 +3031,53 @@ func TestParseDashValues(t *testing.T) {
 	})
 }
 
-// TestIsSafeAbsolutePath verifies cross-platform absolute path allowlisting.
-// WHY: the original check used strings.HasPrefix(path, "/") which missed
-// Windows absolute paths entirely -- an attacker could bypass the allowlist.
-func TestIsSafeAbsolutePath(t *testing.T) {
+// TestLoadConfigFromFile_Contract pins what loadConfigFromFile checks since
+// v1.1.9. The prefix allowlist it replaced is gone: see configpath_test.go for
+// the locations that are now accepted, and the WHY on loadConfigFromFile for
+// the reasoning.
+func TestLoadConfigFromFile_Contract(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name string
-		path string
-		want bool
-	}{
-		// Unix safe paths
-		{"unix tmp", "/tmp/app/config.json", true},
-		{"unix opt", "/opt/myapp/config.json", true},
-		{"unix etc", "/etc/myapp/config.json", true},
-		{"unix var folders", "/var/folders/xx/config.json", true},
-		{"unix var tmp", "/var/tmp/config.json", true},
+	t.Run("missing file reports read failure", func(t *testing.T) {
+		fs := New("test")
+		_ = fs.String("host", "localhost", "host")
+		err := fs.loadConfigFromFile(filepath.Join(t.TempDir(), "absent.json"))
+		if err == nil {
+			t.Fatal("expected an error for a missing file")
+		}
+		if !strings.Contains(err.Error(), "failed to read config file") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
 
-		// Unix unsafe paths
-		{"unix root ssh", "/root/.ssh/authorized_keys", false},
-		{"unix home", "/home/user/.bashrc", false},
-		{"unix usr", "/usr/local/config.json", false},
+	t.Run("directory is rejected as not a regular file", func(t *testing.T) {
+		fs := New("test")
+		_ = fs.String("host", "localhost", "host")
+		err := fs.loadConfigFromFile(t.TempDir())
+		if err == nil {
+			t.Fatal("expected an error for a directory")
+		}
+		if !strings.Contains(err.Error(), "not a regular file") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
 
-		// Path cleaning -- filepath.Clean normalises these
-		{"unix tmp trailing slash", "/tmp/config.json/", true},
-		{"unix tmp double slash", "/tmp//app//config.json", true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := isSafeAbsolutePath(tt.path)
-			if got != tt.want {
-				t.Errorf("isSafeAbsolutePath(%q) = %v, want %v", tt.path, got, tt.want)
-			}
-		})
-	}
-}
-
-// TestLoadConfigFromFileCrossPlatformPaths tests that loadConfigFromFile
-// rejects unsafe absolute paths using filepath.IsAbs (not just "/" prefix).
-func TestLoadConfigFromFileCrossPlatformPaths(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name     string
-		path     string
-		wantErr  bool
-		unixOnly bool // WHY: /home/... is not absolute on Windows (no drive letter)
-		winOnly  bool
-	}{
-		// Traversal is always blocked (platform-independent)
-		{"traversal unix", "/etc/myapp/../../../etc/shadow", true, false, false},
-		{"traversal relative", "config/../../../etc/shadow", true, false, false},
-
-		// Unix: safe absolute path passes validation (file-not-found is OK)
-		{"safe unix tmp", "/tmp/nonexistent-flashflags-test.json", false, true, false},
-
-		// Unix: unsafe absolute paths are blocked at validation
-		{"unsafe unix home", "/home/user/evil.json", true, true, false},
-		{"unsafe unix root", "/root/config.json", true, true, false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.unixOnly && runtime.GOOS == "windows" {
-				t.Skip("Unix-specific path; not absolute on Windows")
-			}
-			if tt.winOnly && runtime.GOOS != "windows" {
-				t.Skip("Windows-specific path")
-			}
-
-			fs := New("test")
-			_ = fs.String("host", "localhost", "host")
-
-			err := fs.loadConfigFromFile(tt.path)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatalf("loadConfigFromFile(%q): expected error, got nil", tt.path)
-				}
-				// Traversal and unsafe paths produce "invalid config file path"
-				if !strings.Contains(err.Error(), "invalid config file path") {
-					t.Errorf("loadConfigFromFile(%q): unexpected error: %v", tt.path, err)
-				}
-			} else {
-				// For safe paths, accept either file-not-found or success
-				if err != nil && strings.Contains(err.Error(), "invalid config file path") {
-					t.Errorf("loadConfigFromFile(%q): path was rejected but should be allowed: %v", tt.path, err)
-				}
-			}
-		})
-	}
+	t.Run("regular file outside any former allowlist is read", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "sub", "..", "app.json")
+		if err := os.WriteFile(filepath.Join(dir, "app.json"), []byte(`{"host":"ok"}`), 0o600); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		if err := os.MkdirAll(filepath.Join(dir, "sub"), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		fs := New("test")
+		_ = fs.String("host", "localhost", "host")
+		if err := fs.loadConfigFromFile(path); err != nil {
+			t.Fatalf("loadConfigFromFile(%q): %v", path, err)
+		}
+		if got := fs.GetString("host"); got != "ok" {
+			t.Errorf("host = %q, want ok", got)
+		}
+	})
 }
