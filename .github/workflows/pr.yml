@@ -20,6 +20,13 @@ jobs:
       with:
         go-version: 'stable'
         cache: true
+        # flash-flags has no external dependencies, so there is no go.sum for
+        # setup-go to key the cache on. Without one it logs "Restore cache
+        # failed" and never generates a key, so nothing is cached at all.
+        # go.mod exists and is stable, which restores the module and build
+        # caches -- worth having here, since the tools installed below are
+        # fetched through the module cache.
+        cache-dependency-path: go.mod
 
     - name: Quick Quality Check
       run: |
