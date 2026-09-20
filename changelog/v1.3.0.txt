@@ -1,0 +1,54 @@
+Flash-Flags v1.3.0 - Help Is Not a Reserved Name
+=================================================
+
+Release Date: 2026-09-20
+Type: Fix + Feature
+
+FIXED
+-----
+- --help and -h no longer shadow a flag registered under the same name or
+  short key.
+
+  isHelpFlag ran before any lookup, so Parse printed the help text and
+  returned "help requested" the moment it saw either spelling. A flag
+  declared as StringVar("host", "h", ...) was therefore unreachable: -h
+  could never set it, and the caller got an error instead of a value. The
+  example in API-REFERENCE.md under "Special" used exactly that declaration,
+  so the documentation demonstrated the broken case.
+
+  The built-in now yields as soon as the caller claims the spelling, and the
+  argument is parsed like any other. The two spellings are judged
+  independently -- registering --help as a flag name leaves -h to the
+  built-in, and claiming the short key "h" leaves --help to it -- because an
+  application that wants both will ask for both.
+
+  WHY it yields rather than erroring on the collision: --help and -h are a
+  convenience the parser offers, not names it owns. A caller that registers
+  one of them means it, and refusing the registration would make the
+  convenience more important than the application's own interface.
+
+ADDED
+-----
+- Float64Var, DurationVar and StringSliceVar: short-key variants for the
+  three flag types that had none.
+
+  String, Int and Bool each had a Var form taking a short key; float64,
+  duration and string-slice flags could only be declared long-form. A caller
+  wanting -r for --rate had nowhere to say so, and a wrapper built on top of
+  this package could only accept a short key and drop it silently, which is
+  what Orpheus did for Float64 and StringSlice.
+
+  The plain forms now delegate to the Var forms with an empty short key, so
+  there is one implementation per type rather than two that can drift.
+  StringSliceVar copies the caller's default, as StringSlice already did.
+
+COMPATIBILITY
+-------------
+The three additions are purely additive.
+
+The help change alters behaviour only for a FlagSet that registers a flag
+named "help" or using the short key "h". Such a flag previously could not be
+set at all, so no working configuration depended on the old behaviour: the
+values that change are ones that were unreachable.
+
+Coverage 95.0% -> 96.8%. Requires Go 1.25.9 or later, unchanged from v1.2.0.
