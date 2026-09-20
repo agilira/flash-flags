@@ -39,7 +39,7 @@ type Flag struct {
 	defaultValue interface{} // original default value for reset
 	ptr          interface{} // pointer to the actual value
 	flagType     string
-	changed      bool
+	source       flagSource // highest-priority source that supplied the current value
 	usage        string
 	shortKey     string                  // Short flag key (e.g., "p" for port)
 	validator    func(interface{}) error // Optional validation function
@@ -94,7 +94,20 @@ func (f *Flag) Type() string { return f.flagType }
 //	} else {
 //		fmt.Println("Port is using default value")
 //	}
-func (f *Flag) Changed() bool { return f.changed }
+func (f *Flag) Changed() bool { return f.source != sourceDefault }
+
+// Source returns the configuration source that supplied the flag's current
+// value: "cli", "env", "config" or "default".
+//
+// Sources are resolved by precedence, so the returned name is the highest-priority
+// source that set the flag, not merely the last one consulted. A flag present in
+// both the config file and the environment reports "env".
+//
+// Example:
+//
+//	flag := fs.Lookup("port")
+//	fmt.Printf("port=%v (from %s)\n", flag.Value(), flag.Source())
+func (f *Flag) Source() string { return f.source.String() }
 
 // Usage returns the flag usage description string.
 // This is the help text that was provided when the flag was created.
@@ -163,7 +176,7 @@ func (f *Flag) Reset() {
 	if f.ptr != nil {
 		f.resetPointer()
 	}
-	f.changed = false
+	f.source = sourceDefault
 }
 
 // resetPointer resets the pointer to the default value based on the flag type
@@ -316,7 +329,7 @@ func (fs *FlagSet) String(name, defaultValue, usage string) *string {
 		value:        defaultValue,
 		ptr:          &value,
 		flagType:     "string",
-		changed:      false,
+		source:       sourceDefault,
 		usage:        usage,
 		shortKey:     "",
 		defaultValue: defaultValue,
@@ -351,7 +364,7 @@ func (fs *FlagSet) StringVar(name, shortKey string, defaultValue, usage string) 
 		value:        defaultValue,
 		ptr:          &value,
 		flagType:     "string",
-		changed:      false,
+		source:       sourceDefault,
 		usage:        usage,
 		shortKey:     shortKey,
 		defaultValue: defaultValue,
@@ -372,7 +385,7 @@ func (fs *FlagSet) Int(name string, defaultValue int, usage string) *int {
 		value:        defaultValue,
 		ptr:          &value,
 		flagType:     "int",
-		changed:      false,
+		source:       sourceDefault,
 		usage:        usage,
 		shortKey:     "",
 		defaultValue: defaultValue,
@@ -391,7 +404,7 @@ func (fs *FlagSet) IntVar(name, shortKey string, defaultValue int, usage string)
 		value:        defaultValue,
 		ptr:          &value,
 		flagType:     "int",
-		changed:      false,
+		source:       sourceDefault,
 		usage:        usage,
 		shortKey:     shortKey,
 		validator:    nil,
@@ -432,7 +445,7 @@ func (fs *FlagSet) Bool(name string, defaultValue bool, usage string) *bool {
 		value:        defaultValue,
 		ptr:          &value,
 		flagType:     "bool",
-		changed:      false,
+		source:       sourceDefault,
 		usage:        usage,
 		shortKey:     "",
 		validator:    nil,
@@ -453,7 +466,7 @@ func (fs *FlagSet) BoolVar(name, shortKey string, defaultValue bool, usage strin
 		value:        defaultValue,
 		ptr:          &value,
 		flagType:     "bool",
-		changed:      false,
+		source:       sourceDefault,
 		usage:        usage,
 		shortKey:     shortKey,
 		validator:    nil,
@@ -495,7 +508,7 @@ func (fs *FlagSet) Duration(name string, defaultValue time.Duration, usage strin
 		value:        defaultValue,
 		ptr:          &value,
 		flagType:     "duration",
-		changed:      false,
+		source:       sourceDefault,
 		usage:        usage,
 		validator:    nil,
 		defaultValue: defaultValue,
@@ -513,7 +526,7 @@ func (fs *FlagSet) Float64(name string, defaultValue float64, usage string) *flo
 		value:        defaultValue,
 		ptr:          &value,
 		flagType:     "float64",
-		changed:      false,
+		source:       sourceDefault,
 		usage:        usage,
 		validator:    nil,
 		defaultValue: defaultValue,
@@ -553,7 +566,7 @@ func (fs *FlagSet) StringSlice(name string, defaultValue []string, usage string)
 		value:        value,
 		ptr:          &value,
 		flagType:     "stringSlice",
-		changed:      false,
+		source:       sourceDefault,
 		usage:        usage,
 		validator:    nil,
 		defaultValue: defaultValue,
@@ -718,7 +731,7 @@ func (fs *FlagSet) parseShortFlag(args []string, i int) (int, error) {
 				*ptr = true
 			}
 		}
-		flag.changed = true
+		flag.source = sourceCLI
 		return 0, nil
 	}
 
@@ -804,7 +817,7 @@ func (fs *FlagSet) parseCombinedShortFlags(args []string, i int, flagChars strin
 					*ptr = true
 				}
 			}
-			flag.changed = true
+			flag.source = sourceCLI
 		} else {
 			// Non-boolean flag must be the last in the sequence
 			if !isLastFlag {
@@ -1093,10 +1106,27 @@ func (fs *FlagSet) validateSecurityConstraintsSlow(name, value string) error {
 	return nil
 }
 
+// setFlagValue sets a flag from a command-line argument. It is a thin wrapper
+// over setFlagValueFrom that records the command-line source.
 func (fs *FlagSet) setFlagValue(name, value string) error {
+	return fs.setFlagValueFrom(name, value, sourceCLI)
+}
+
+// setFlagValueFrom parses value into the named flag and records src as its
+// origin, provided src outranks the source that currently owns the value.
+//
+// A write from a lower-priority source is discarded and reported as success:
+// being outranked is the normal outcome of layered configuration, not a
+// failure. The value is not parsed or validated in that case, so a leftover
+// environment variable cannot fail a parse whose result it would never reach.
+func (fs *FlagSet) setFlagValueFrom(name, value string, src flagSource) error {
 	flag, exists := fs.flags[name]
 	if !exists {
 		return fmt.Errorf("unknown flag: --%s", name)
+	}
+
+	if !flag.canSet(src) {
+		return nil
 	}
 
 	// Apply security validation before processing the value (optimized path)
@@ -1110,7 +1140,7 @@ func (fs *FlagSet) setFlagValue(name, value string) error {
 		return err
 	}
 
-	flag.changed = true
+	flag.source = src
 	return fs.validateFlag(flag, name)
 }
 
@@ -1223,9 +1253,27 @@ func (fs *FlagSet) PrintUsage() {
 //	}
 func (fs *FlagSet) Changed(name string) bool {
 	if flag := fs.Lookup(name); flag != nil {
-		return flag.changed
+		return flag.Changed()
 	}
 	return false
+}
+
+// Source returns the configuration source that supplied the named flag's current
+// value: "cli", "env", "config" or "default". Unknown flags report "default".
+//
+// This is the recommended way to debug precedence: it tells you not just that a
+// flag changed, but which layer won.
+//
+// Example:
+//
+//	if fs.Source("port") == "config" {
+//		log.Println("port came from the config file")
+//	}
+func (fs *FlagSet) Source(name string) string {
+	if flag := fs.Lookup(name); flag != nil {
+		return flag.Source()
+	}
+	return sourceDefault.String()
 }
 
 // SetValidator sets a validation function for a specific flag.
@@ -1443,7 +1491,7 @@ func (fs *FlagSet) ValidateAll() error {
 // Required flags can be satisfied by any configuration source (CLI, env, config file).
 func (fs *FlagSet) ValidateRequired() error {
 	for name, flag := range fs.flags {
-		if flag.required && !flag.changed {
+		if flag.required && flag.source == sourceDefault {
 			return fmt.Errorf("required flag --%s not provided", name)
 		}
 	}
@@ -1468,13 +1516,13 @@ func (fs *FlagSet) ValidateRequired() error {
 // Dependencies must be satisfied by any configuration source.
 func (fs *FlagSet) ValidateDependencies() error {
 	for name, flag := range fs.flags {
-		if flag.changed && len(flag.dependencies) > 0 {
+		if flag.source != sourceDefault && len(flag.dependencies) > 0 {
 			for _, dep := range flag.dependencies {
 				depFlag := fs.Lookup(dep)
 				if depFlag == nil {
 					return fmt.Errorf("flag --%s depends on non-existent flag --%s", name, dep)
 				}
-				if !depFlag.changed {
+				if depFlag.source == sourceDefault {
 					return fmt.Errorf("flag --%s requires --%s to be set", name, dep)
 				}
 			}
@@ -2245,8 +2293,9 @@ func (fs *FlagSet) applyConfig(config map[string]interface{}) error {
 			continue // Skip unknown flags
 		}
 
-		// Only apply config value if flag wasn't set by command line
-		if flag.changed {
+		// setFlagValueFromConfig enforces this too; skipping early avoids the
+		// conversion work for a value that would be discarded anyway.
+		if !flag.canSet(sourceConfig) {
 			continue
 		}
 
@@ -2325,6 +2374,33 @@ func (fs *FlagSet) setFloat64ValueFromConfig(flag *Flag, value interface{}, name
 	return nil
 }
 
+// setDurationValueFromConfig sets a duration flag from a config file value.
+// JSON has no duration type, so two encodings are accepted: the human-readable
+// string understood by time.ParseDuration ("30s", "1m30s"), and a plain number
+// of nanoseconds, which is what encoding/json emits for a time.Duration.
+func (fs *FlagSet) setDurationValueFromConfig(flag *Flag, value interface{}, name string) error {
+	var duration time.Duration
+	switch v := value.(type) {
+	case string:
+		parsed, err := time.ParseDuration(v)
+		if err != nil {
+			return fmt.Errorf("invalid duration for flag %s: %v", name, err)
+		}
+		duration = parsed
+	case float64: // JSON numbers decode to float64; treated as nanoseconds
+		duration = time.Duration(v)
+	default:
+		return fmt.Errorf("expected duration string or number for flag %s, got %T", name, value)
+	}
+	flag.value = duration
+	if flag.ptr != nil {
+		if ptr, ok := flag.ptr.(*time.Duration); ok {
+			*ptr = duration
+		}
+	}
+	return nil
+}
+
 func (fs *FlagSet) setStringSliceValueFromConfig(flag *Flag, value interface{}, name string) error {
 	if slice, ok := value.([]interface{}); ok {
 		strSlice := make([]string, len(slice))
@@ -2352,6 +2428,10 @@ func (fs *FlagSet) setFlagValueFromConfig(name string, value interface{}) error 
 		return fmt.Errorf("unknown flag: %s", name)
 	}
 
+	if !flag.canSet(sourceConfig) {
+		return nil
+	}
+
 	// Apply security validation for string values from config
 	if strValue, ok := value.(string); ok {
 		if err := fs.validateSecurityConstraints(name, strValue); err != nil {
@@ -2364,8 +2444,8 @@ func (fs *FlagSet) setFlagValueFromConfig(name string, value interface{}) error 
 		return err
 	}
 
-	// Mark flag as changed since it was loaded from config
-	flag.changed = true
+	// Record the config file as this value's origin.
+	flag.source = sourceConfig
 
 	// Validate the value if validator is set
 	return fs.validateFlagValue(flag)
@@ -2382,6 +2462,8 @@ func (fs *FlagSet) setConfigValueByType(flag *Flag, value interface{}, name stri
 		return fs.setBoolValueFromConfig(flag, value, name)
 	case "float64":
 		return fs.setFloat64ValueFromConfig(flag, value, name)
+	case "duration":
+		return fs.setDurationValueFromConfig(flag, value, name)
 	case "stringSlice":
 		return fs.setStringSliceValueFromConfig(flag, value, name)
 	default:
@@ -2418,8 +2500,10 @@ func (fs *FlagSet) LoadEnvironmentVariables() error {
 	}
 
 	for name, flag := range fs.flags {
-		// Skip if flag was already set via command line
-		if flag.changed {
+		// setFlagValueFrom enforces this too; skipping early avoids the env
+		// lookup for a value that would be discarded anyway. A value from the
+		// config file ranks lower and is overridden here.
+		if !flag.canSet(sourceEnv) {
 			continue
 		}
 
@@ -2434,7 +2518,7 @@ func (fs *FlagSet) LoadEnvironmentVariables() error {
 		}
 
 		// Set the flag value from environment variable
-		if err := fs.setFlagValue(name, envValue); err != nil {
+		if err := fs.setFlagValueFrom(name, envValue, sourceEnv); err != nil {
 			return fmt.Errorf("invalid environment variable %s=%s: %v", envVarName, envValue, err)
 		}
 	}
