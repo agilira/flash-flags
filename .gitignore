@@ -69,17 +69,13 @@ testdata/
 demo-script.sh
 RECORDING.md
 
-# Example binaries (built locally for demo recording)
+# Example binaries, built in place by `go build` inside examples/.
+# `go build` names the output after the module, not the directory, so these
+# follow the "module" line in each examples/*/go.mod.
 examples/advanced-syntax/advanced-syntax
-examples/basic/basic
+examples/basic/basic-demo
 examples/config/config-demo
-examples/env/env
-examples/help/help
-examples/required/required
+examples/env/env-demo
+examples/help/help-demo
+examples/required/required-demo
 examples/stdlib-drop-in/stdlib-drop-in
-
-# Example programs built in place by `go build ./...` inside examples/
-examples/*/basic-demo
-examples/*/env-demo
-examples/*/help-demo
-examples/*/required-demo
