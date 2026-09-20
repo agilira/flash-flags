@@ -4,16 +4,37 @@
 // Series: an AGILira library
 // SPDX-License-Identifier: MPL-2.0
 
-// Package flashflags provides ultra-fast, zero-dependency, lock-free command-line flag parsing.
+// Package flashflags provides ultra-fast, zero-dependency command-line flag parsing.
 // This library is extracted from argus with exactly the same structure for maximum performance.
+//
+// # Concurrency
+//
+// A FlagSet is not internally synchronized: it holds no mutexes and performs no
+// atomic operations, which is what keeps reads down to a plain map lookup.
+// The guarantee it offers is the one a flag set actually needs:
+//
+//   - Reads are safe from any number of goroutines once Parse has returned,
+//     because nothing mutates the flag set afterwards. This covers Lookup, Value,
+//     Changed, Source, the Get* accessors and the pointers returned at
+//     declaration time.
+//   - Mutating calls are not safe to run concurrently with anything. These are
+//     Parse, LoadConfig, LoadEnvironmentVariables, Reset, ResetFlag and every
+//     Set* configuration method. Declare, configure and parse from a single
+//     goroutine -- normally the one running main -- before sharing the FlagSet.
+//
+// Calling Reset while another goroutine reads is a data race and will be
+// reported by the race detector. If an application needs to re-parse at runtime,
+// it must provide its own synchronization, or build a fresh FlagSet and swap it
+// behind a pointer.
 package flashflags
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -32,14 +53,16 @@ import (
 //	}
 //
 // Flags support validation, dependencies, grouping, and environment variable integration.
-// All operations are lock-free and safe for concurrent access.
+// A Flag is safe for concurrent reads once Parse has returned; it is not safe to
+// read while any goroutine mutates the owning FlagSet. See the package
+// documentation on concurrency.
 type Flag struct {
 	name         string
 	value        interface{}
 	defaultValue interface{} // original default value for reset
 	ptr          interface{} // pointer to the actual value
 	flagType     string
-	changed      bool
+	source       flagSource // highest-priority source that supplied the current value
 	usage        string
 	shortKey     string                  // Short flag key (e.g., "p" for port)
 	validator    func(interface{}) error // Optional validation function
@@ -94,7 +117,20 @@ func (f *Flag) Type() string { return f.flagType }
 //	} else {
 //		fmt.Println("Port is using default value")
 //	}
-func (f *Flag) Changed() bool { return f.changed }
+func (f *Flag) Changed() bool { return f.source != sourceDefault }
+
+// Source returns the configuration source that supplied the flag's current
+// value: "cli", "env", "config" or "default".
+//
+// Sources are resolved by precedence, so the returned name is the highest-priority
+// source that set the flag, not merely the last one consulted. A flag present in
+// both the config file and the environment reports "env".
+//
+// Example:
+//
+//	flag := fs.Lookup("port")
+//	fmt.Printf("port=%v (from %s)\n", flag.Value(), flag.Source())
+func (f *Flag) Source() string { return f.source.String() }
 
 // Usage returns the flag usage description string.
 // This is the help text that was provided when the flag was created.
@@ -119,11 +155,21 @@ func (f *Flag) ShortKey() string { return f.shortKey }
 // SetValidator sets a validation function for the flag.
 // The validator will be called whenever the flag value is set or changed.
 //
+// The validator receives the value boxed in an interface{}. Always use the
+// comma-ok form of the type assertion: a bare val.(int) panics, and a panic
+// inside a validator propagates out of Parse and terminates the program. The
+// dynamic type matches the flag's declared type -- int for Int, time.Duration
+// for Duration, []string for StringSlice -- so a failed assertion means the
+// validator was attached to the wrong flag.
+//
 // Example:
 //
 //	flag := fs.Lookup("port")
 //	flag.SetValidator(func(val interface{}) error {
-//		port := val.(int)
+//		port, ok := val.(int)
+//		if !ok {
+//			return fmt.Errorf("expected int, got %T", val)
+//		}
 //		if port < 1024 {
 //			return fmt.Errorf("port must be >= 1024")
 //		}
@@ -163,7 +209,7 @@ func (f *Flag) Reset() {
 	if f.ptr != nil {
 		f.resetPointer()
 	}
-	f.changed = false
+	f.source = sourceDefault
 }
 
 // resetPointer resets the pointer to the default value based on the flag type
@@ -239,12 +285,17 @@ func (f *Flag) resetStringSlicePointer() {
 }
 
 // FlagSet represents a collection of command-line flags with parsing and validation capabilities.
-// It implements ultra-fast flag set handling using only the standard library with lock-free operations.
+// It implements ultra-fast flag set handling using only the standard library.
 //
 // FlagSet supports multiple configuration sources in priority order:
 //  1. Command-line arguments (highest priority)
 //  2. Environment variables
-//  3. Configuration files (lowest priority)
+//  3. Configuration files
+//  4. Defaults given at declaration (lowest priority)
+//
+// A higher-priority source always wins, whatever order the loaders run in: a
+// value found in the config file does not suppress the matching environment
+// variable. Use Source to find out which layer supplied a given value.
 //
 // Example usage:
 //
@@ -258,7 +309,9 @@ func (f *Flag) resetStringSlicePointer() {
 //
 //	fmt.Printf("Server starting on %s:%d\n", *host, *port)
 //
-// All FlagSet operations are thread-safe and use lock-free algorithms for optimal performance.
+// A FlagSet is safe for concurrent reads once Parse has returned, and is not
+// internally synchronized for writes. See the package documentation on
+// concurrency.
 type FlagSet struct {
 	flags           map[string]*Flag // Long flag name -> Flag
 	shortMap        map[string]*Flag // Short flag key -> Flag
@@ -270,6 +323,7 @@ type FlagSet struct {
 	configLoaded    bool     // Whether config has been loaded
 	envPrefix       string   // Prefix for environment variables (e.g., "MYAPP")
 	enableEnvLookup bool     // Whether to lookup environment variables
+	strictPaths     bool     // Whether to refuse a symlinked configuration file
 	args            []string // Remaining non-flag arguments after parsing
 }
 
@@ -278,7 +332,9 @@ type FlagSet struct {
 // Returns a FlagSet with zero external dependencies.
 //
 // Thread Safety:
-// All FlagSet operations are thread-safe and use lock-free algorithms for optimal performance.
+// A FlagSet is safe for concurrent reads once Parse has returned, and is not
+// internally synchronized for writes. See the package documentation on
+// concurrency.
 // Multiple goroutines can safely read flag values concurrently after parsing is complete.
 // However, Parse() should only be called once from a single goroutine.
 //
@@ -316,7 +372,7 @@ func (fs *FlagSet) String(name, defaultValue, usage string) *string {
 		value:        defaultValue,
 		ptr:          &value,
 		flagType:     "string",
-		changed:      false,
+		source:       sourceDefault,
 		usage:        usage,
 		shortKey:     "",
 		defaultValue: defaultValue,
@@ -351,7 +407,7 @@ func (fs *FlagSet) StringVar(name, shortKey string, defaultValue, usage string) 
 		value:        defaultValue,
 		ptr:          &value,
 		flagType:     "string",
-		changed:      false,
+		source:       sourceDefault,
 		usage:        usage,
 		shortKey:     shortKey,
 		defaultValue: defaultValue,
@@ -372,7 +428,7 @@ func (fs *FlagSet) Int(name string, defaultValue int, usage string) *int {
 		value:        defaultValue,
 		ptr:          &value,
 		flagType:     "int",
-		changed:      false,
+		source:       sourceDefault,
 		usage:        usage,
 		shortKey:     "",
 		defaultValue: defaultValue,
@@ -391,7 +447,7 @@ func (fs *FlagSet) IntVar(name, shortKey string, defaultValue int, usage string)
 		value:        defaultValue,
 		ptr:          &value,
 		flagType:     "int",
-		changed:      false,
+		source:       sourceDefault,
 		usage:        usage,
 		shortKey:     shortKey,
 		validator:    nil,
@@ -432,7 +488,7 @@ func (fs *FlagSet) Bool(name string, defaultValue bool, usage string) *bool {
 		value:        defaultValue,
 		ptr:          &value,
 		flagType:     "bool",
-		changed:      false,
+		source:       sourceDefault,
 		usage:        usage,
 		shortKey:     "",
 		validator:    nil,
@@ -453,7 +509,7 @@ func (fs *FlagSet) BoolVar(name, shortKey string, defaultValue bool, usage strin
 		value:        defaultValue,
 		ptr:          &value,
 		flagType:     "bool",
-		changed:      false,
+		source:       sourceDefault,
 		usage:        usage,
 		shortKey:     shortKey,
 		validator:    nil,
@@ -495,7 +551,7 @@ func (fs *FlagSet) Duration(name string, defaultValue time.Duration, usage strin
 		value:        defaultValue,
 		ptr:          &value,
 		flagType:     "duration",
-		changed:      false,
+		source:       sourceDefault,
 		usage:        usage,
 		validator:    nil,
 		defaultValue: defaultValue,
@@ -513,7 +569,7 @@ func (fs *FlagSet) Float64(name string, defaultValue float64, usage string) *flo
 		value:        defaultValue,
 		ptr:          &value,
 		flagType:     "float64",
-		changed:      false,
+		source:       sourceDefault,
 		usage:        usage,
 		validator:    nil,
 		defaultValue: defaultValue,
@@ -553,7 +609,7 @@ func (fs *FlagSet) StringSlice(name string, defaultValue []string, usage string)
 		value:        value,
 		ptr:          &value,
 		flagType:     "stringSlice",
-		changed:      false,
+		source:       sourceDefault,
 		usage:        usage,
 		validator:    nil,
 		defaultValue: defaultValue,
@@ -718,7 +774,7 @@ func (fs *FlagSet) parseShortFlag(args []string, i int) (int, error) {
 				*ptr = true
 			}
 		}
-		flag.changed = true
+		flag.source = sourceCLI
 		return 0, nil
 	}
 
@@ -804,7 +860,7 @@ func (fs *FlagSet) parseCombinedShortFlags(args []string, i int, flagChars strin
 					*ptr = true
 				}
 			}
-			flag.changed = true
+			flag.source = sourceCLI
 		} else {
 			// Non-boolean flag must be the last in the sequence
 			if !isLastFlag {
@@ -940,12 +996,11 @@ func (fs *FlagSet) setFloat64Value(flag *Flag, value, name string) error {
 func (fs *FlagSet) setStringSliceValue(flag *Flag, value string) error {
 	slice := fs.parseStringSlice(value)
 
-	// Apply security validation to each item in the slice
-	for i, item := range slice {
-		if err := fs.validateSecurityConstraints(flag.name+"["+strconv.Itoa(i)+"]", item); err != nil {
-			return fmt.Errorf("string slice item validation failed: %v", err)
-		}
-	}
+	// WHY no per-element screening here: the caller screened the whole value
+	// before it was split, and input hygiene is a per-character property, so no
+	// element can fail a check the joined string already passed. The config
+	// file path does need it, because a JSON array never passes through this
+	// function -- see screenConfigValue.
 
 	// Additional validation for slice size (DoS protection)
 	if len(slice) > 10000 {
@@ -1009,28 +1064,45 @@ func (fs *FlagSet) updateStringSlicePointer(flag *Flag, slice []string) {
 	}
 }
 
-// validateSecurityConstraints validates input values against common security threats
-// Optimized version - fast path for common safe inputs
-func (fs *FlagSet) validateSecurityConstraints(name, value string) error {
+// validateInputHygiene rejects flag values that are malformed as strings,
+// whatever they are later used for: a value longer than maxValueLength, or one
+// containing a null byte or a C0 control character other than tab, newline and
+// carriage return.
+//
+// WHY it stops there: a flag parser does not know whether a value will reach a
+// shell, a SQL driver, an fmt verb or a file open, so it cannot decide which
+// substrings are dangerous. Until v1.1.9 this function also rejected values
+// containing "/etc/", "rm -rf", "drop table", "$(", a backtick, format verbs
+// and Windows device names. That denylist blocked no attack -- "a; rm -rf ~",
+// "deploy && restart" and "..%2f..%2fetc" all passed it -- while rejecting
+// ordinary input such as "--config /etc/myapp.conf". Escaping belongs at the
+// point of use: exec without a shell, parameterize SQL, resolve and confine
+// paths. See screening_test.go, which pins both halves of this contract.
+func (fs *FlagSet) validateInputHygiene(name, value string) error {
 	// Fast path: length check first (most common case)
 	valueLen := len(value)
-	if valueLen > 10000 {
-		return fmt.Errorf("flag --%s value too long: %d chars (max: 10000)", name, valueLen)
+	if valueLen > maxValueLength {
+		return fmt.Errorf("flag --%s value too long: %d bytes (max: %d)", name, valueLen, maxValueLength)
 	}
 
-	// Fast path: empty or very short values are usually safe
 	if valueLen == 0 {
 		return nil
 	}
 
-	// Fast path: simple alphanumeric values are safe
+	// Fast path: a simple alphanumeric value cannot contain a null byte or a
+	// control character, so the full scan would find nothing.
 	if valueLen < 100 && isSimpleAlphanumeric(value) {
 		return nil
 	}
 
-	// Comprehensive checks for potentially dangerous values
-	return fs.validateSecurityConstraintsSlow(name, value)
+	return fs.validateInputHygieneSlow(name, value)
 }
+
+// maxValueLength is the largest accepted flag value, in bytes. It is compared
+// against len(value), which counts bytes rather than runes, so a value of
+// multi-byte characters reaches the cap sooner than its character count
+// suggests. The error message names the unit for that reason.
+const maxValueLength = 10000
 
 // isSimpleAlphanumeric checks if a string contains only safe characters
 func isSimpleAlphanumeric(s string) bool {
@@ -1043,9 +1115,12 @@ func isSimpleAlphanumeric(s string) bool {
 	return true
 }
 
-// validateSecurityConstraintsSlow performs comprehensive security validation
-func (fs *FlagSet) validateSecurityConstraintsSlow(name, value string) error {
-	// Check for null bytes and dangerous control characters in one pass
+// validateInputHygieneSlow scans a value that did not qualify for the fast path.
+// It is a single pass looking for bytes that cannot appear in a well-formed
+// value: a null byte, which truncates the string in any C API it reaches, and a
+// C0 control character other than tab, newline or carriage return, which is
+// almost always a terminal escape sequence rather than data.
+func (fs *FlagSet) validateInputHygieneSlow(name, value string) error {
 	for i, r := range value {
 		if r == '\x00' {
 			return fmt.Errorf("flag --%s contains null byte at position %d", name, i)
@@ -1054,54 +1129,35 @@ func (fs *FlagSet) validateSecurityConstraintsSlow(name, value string) error {
 			return fmt.Errorf("flag --%s contains control character: \\x%02x", name, r)
 		}
 	}
-
-	// Path traversal check
-	if strings.Contains(value, "../") || strings.Contains(value, "..\\") {
-		return fmt.Errorf("flag --%s contains path traversal sequence", name)
-	}
-
-	// Combined pattern check for efficiency
-	lowerValue := strings.ToLower(value)
-
-	// Critical patterns only (most dangerous)
-	if strings.Contains(lowerValue, "$(") || strings.Contains(value, "`") ||
-		strings.Contains(lowerValue, "rm -rf") || strings.Contains(lowerValue, "/etc/") ||
-		strings.Contains(lowerValue, "/proc/") || strings.Contains(lowerValue, "/sys/") ||
-		strings.Contains(lowerValue, "drop table") {
-		return fmt.Errorf("flag --%s contains dangerous pattern", name)
-	}
-
-	// Check for format string attacks (case insensitive)
-	for i := 0; i < len(value)-1; i++ {
-		if value[i] == '%' {
-			next := strings.ToLower(string(value[i+1]))
-			if next == "n" || next == "s" || next == "x" || next == "d" || next == "c" || next == "p" {
-				return fmt.Errorf("flag --%s contains format string pattern", name)
-			}
-		}
-	}
-
-	// Windows device names (only check if short enough)
-	if len(value) < 10 {
-		upperValue := strings.ToUpper(value)
-		if upperValue == "CON" || upperValue == "PRN" || upperValue == "AUX" || upperValue == "NUL" ||
-			strings.HasPrefix(upperValue, "COM") || strings.HasPrefix(upperValue, "LPT") {
-			return fmt.Errorf("flag --%s matches Windows device name", name)
-		}
-	}
-
 	return nil
 }
 
+// setFlagValue sets a flag from a command-line argument. It is a thin wrapper
+// over setFlagValueFrom that records the command-line source.
 func (fs *FlagSet) setFlagValue(name, value string) error {
+	return fs.setFlagValueFrom(name, value, sourceCLI)
+}
+
+// setFlagValueFrom parses value into the named flag and records src as its
+// origin, provided src outranks the source that currently owns the value.
+//
+// A write from a lower-priority source is discarded and reported as success:
+// being outranked is the normal outcome of layered configuration, not a
+// failure. The value is not parsed or validated in that case, so a leftover
+// environment variable cannot fail a parse whose result it would never reach.
+func (fs *FlagSet) setFlagValueFrom(name, value string, src flagSource) error {
 	flag, exists := fs.flags[name]
 	if !exists {
 		return fmt.Errorf("unknown flag: --%s", name)
 	}
 
+	if !flag.canSet(src) {
+		return nil
+	}
+
 	// Apply security validation before processing the value (optimized path)
 	if len(value) > 0 && (len(value) > 100 || !isSimpleAlphanumeric(value)) {
-		if err := fs.validateSecurityConstraints(name, value); err != nil {
+		if err := fs.validateInputHygiene(name, value); err != nil {
 			return err
 		}
 	}
@@ -1110,7 +1166,7 @@ func (fs *FlagSet) setFlagValue(name, value string) error {
 		return err
 	}
 
-	flag.changed = true
+	flag.source = src
 	return fs.validateFlag(flag, name)
 }
 
@@ -1223,9 +1279,27 @@ func (fs *FlagSet) PrintUsage() {
 //	}
 func (fs *FlagSet) Changed(name string) bool {
 	if flag := fs.Lookup(name); flag != nil {
-		return flag.changed
+		return flag.Changed()
 	}
 	return false
+}
+
+// Source returns the configuration source that supplied the named flag's current
+// value: "cli", "env", "config" or "default". Unknown flags report "default".
+//
+// This is the recommended way to debug precedence: it tells you not just that a
+// flag changed, but which layer won.
+//
+// Example:
+//
+//	if fs.Source("port") == "config" {
+//		log.Println("port came from the config file")
+//	}
+func (fs *FlagSet) Source(name string) string {
+	if flag := fs.Lookup(name); flag != nil {
+		return flag.Source()
+	}
+	return sourceDefault.String()
 }
 
 // SetValidator sets a validation function for a specific flag.
@@ -1240,7 +1314,10 @@ func (fs *FlagSet) Changed(name string) bool {
 //	port := fs.IntVar("port", "p", 8080, "Server port")
 //
 //	err := fs.SetValidator("port", func(val interface{}) error {
-//		port := val.(int)
+//		port, ok := val.(int)
+//		if !ok {
+//			return fmt.Errorf("expected int, got %T", val)
+//		}
 //		if port < 1024 || port > 65535 {
 //			return fmt.Errorf("port must be between 1024-65535, got %d", port)
 //		}
@@ -1249,6 +1326,9 @@ func (fs *FlagSet) Changed(name string) bool {
 //	if err != nil {
 //		log.Fatal(err)
 //	}
+//
+// Use the comma-ok form of the type assertion as shown: a bare val.(int) panics
+// on mismatch, and that panic propagates out of Parse.
 //
 // Returns an error if the flag name doesn't exist.
 func (fs *FlagSet) SetValidator(name string, validator func(interface{}) error) error {
@@ -1443,7 +1523,7 @@ func (fs *FlagSet) ValidateAll() error {
 // Required flags can be satisfied by any configuration source (CLI, env, config file).
 func (fs *FlagSet) ValidateRequired() error {
 	for name, flag := range fs.flags {
-		if flag.required && !flag.changed {
+		if flag.required && flag.source == sourceDefault {
 			return fmt.Errorf("required flag --%s not provided", name)
 		}
 	}
@@ -1468,13 +1548,13 @@ func (fs *FlagSet) ValidateRequired() error {
 // Dependencies must be satisfied by any configuration source.
 func (fs *FlagSet) ValidateDependencies() error {
 	for name, flag := range fs.flags {
-		if flag.changed && len(flag.dependencies) > 0 {
+		if flag.source != sourceDefault && len(flag.dependencies) > 0 {
 			for _, dep := range flag.dependencies {
 				depFlag := fs.Lookup(dep)
 				if depFlag == nil {
 					return fmt.Errorf("flag --%s depends on non-existent flag --%s", name, dep)
 				}
-				if !depFlag.changed {
+				if depFlag.source == sourceDefault {
 					return fmt.Errorf("flag --%s requires --%s to be set", name, dep)
 				}
 			}
@@ -1996,6 +2076,58 @@ func (fs *FlagSet) SetConfigFile(path string) {
 	fs.configFile = path
 }
 
+// errSymlinkRefused is returned by openConfigFile when strict config paths are
+// enabled and the final path component is a symbolic link. It is a sentinel so
+// that both platform implementations report the same thing; loadConfigFromFile
+// turns it into an error naming the path.
+var errSymlinkRefused = errors.New("configuration file is a symbolic link")
+
+// EnableStrictConfigPaths makes Parse refuse a configuration file whose final
+// path component is a symbolic link, for both an explicitly named file and one
+// found by auto-discovery. It is off by default.
+//
+// WHY it is opt-in: following a symlink is what a configuration file is usually
+// expected to do. A Kubernetes ConfigMap mount projects every key as a symlink
+// into a ..data directory, and dotfile managers such as GNU Stow and chezmoi
+// link a config into place from a repository. Refusing symlinks by default
+// would break both, on the platform where they are most common.
+//
+// Turn it on when the program reads configuration from a directory other local
+// users can write to, where an attacker can plant a link before startup and
+// have a privileged process read a file it chose. That is the classic /tmp
+// symlink attack, and it is the only case this setting is for.
+//
+// Only the final component is examined, so a symlinked parent directory is
+// traversed normally. That is deliberate: on macOS /tmp is itself a symlink to
+// /private/tmp, and rejecting paths through it would make the setting unusable
+// there.
+//
+// The strength of the guarantee differs by platform, and the difference matters
+// if you are relying on it:
+//
+//   - On Unix the file is opened with O_NOFOLLOW, so the kernel refuses the
+//     call. The check and the open are one operation and cannot be raced.
+//   - On Windows the final component is checked with Lstat before the open,
+//     because Go exposes no portable O_NOFOLLOW there. A replacement racing
+//     between the two could still be followed. Creating a symbolic link on
+//     Windows needs SeCreateSymbolicLinkPrivilege or Developer Mode, so the
+//     exposure is narrower, but this is best-effort rather than a guarantee.
+//
+// Example:
+//
+//	fs := flashflags.New("myapp")
+//	fs.SetConfigFile("/tmp/myapp.json")
+//	fs.EnableStrictConfigPaths()
+//
+//	if err := fs.Parse(os.Args[1:]); err != nil {
+//		// "config file /tmp/myapp.json is a symbolic link (strict config
+//		//  paths enabled)"
+//		log.Fatal(err)
+//	}
+func (fs *FlagSet) EnableStrictConfigPaths() {
+	fs.strictPaths = true
+}
+
 // AddConfigPath adds a directory to search for configuration files during auto-discovery.
 // Multiple paths can be added and will be searched in order during Parse().
 //
@@ -2009,11 +2141,15 @@ func (fs *FlagSet) SetConfigFile(path string) {
 //	fs := flashflags.New("myapp")
 //	fs.AddConfigPath("./config")        // ./config/myapp.json
 //	fs.AddConfigPath("/etc/myapp")      // /etc/myapp/myapp.json
-//	fs.AddConfigPath(os.Getenv("HOME")) // $HOME/myapp.json
+//	home, _ := os.UserHomeDir()
+//	fs.AddConfigPath(home)              // $HOME/myapp.json
 //
 //	// First found config file will be loaded during Parse()
 //
-// If no paths are added, auto-discovery searches: ".", "./config", "$HOME"
+// Auto-discovery only runs for paths added here, or for the file named by
+// SetConfigFile. A FlagSet with neither loads no configuration at all, so a
+// stray config.json in the working directory cannot alter a program that never
+// opted into configuration files.
 func (fs *FlagSet) AddConfigPath(path string) {
 	fs.configPaths = append(fs.configPaths, path)
 }
@@ -2146,13 +2282,13 @@ func (fs *FlagSet) findConfigFile() string {
 		"config.json",
 	}
 
-	searchPaths := fs.configPaths
-	if len(searchPaths) == 0 {
-		// Default search paths
-		searchPaths = []string{".", "./config", os.Getenv("HOME")}
-	}
-
-	for _, dir := range searchPaths {
+	// WHY no default search paths: LoadConfig returns early unless the
+	// application set a config file or added at least one path, so a default
+	// list here was unreachable -- the coverage profile showed the branch at
+	// zero hits. Implementing it instead would mean a program that never opted
+	// into configuration files silently loading ./<name>.json if one happened
+	// to sit in the working directory, which is not a default worth having.
+	for _, dir := range fs.configPaths {
 		for _, name := range configNames {
 			path := filepath.Join(dir, name)
 			if _, err := os.Stat(path); err == nil {
@@ -2164,67 +2300,60 @@ func (fs *FlagSet) findConfigFile() string {
 	return ""
 }
 
-// isSafeAbsolutePath checks if an absolute path is safe for config files.
-// WHY: We allowlist known-safe prefixes so that arbitrary absolute paths
-// (e.g. /root/.ssh/authorized_keys) cannot be loaded as config.
-// Cross-platform: handles both Unix and Windows path conventions.
-func isSafeAbsolutePath(path string) bool {
-	// Normalise to forward slashes for uniform prefix matching
-	cleaned := filepath.ToSlash(filepath.Clean(path))
-
-	// Unix safe prefixes
-	unixSafe := []string{
-		"/tmp/",         // Linux/Unix temp
-		"/opt/",         // Optional software
-		"/etc/",         // System configuration
-		"/var/folders/", // macOS temp
-		"/var/tmp/",     // System temp
-	}
-
-	for _, prefix := range unixSafe {
-		if strings.HasPrefix(cleaned, prefix) {
-			return true
-		}
-	}
-
-	// Windows safe prefixes (drive-letter agnostic)
-	if runtime.GOOS == "windows" {
-		upper := strings.ToUpper(cleaned)
-		// Strip drive letter (e.g. "C:") for prefix comparison
-		if len(upper) >= 2 && upper[1] == ':' {
-			upper = upper[2:]
-		}
-		winSafe := []string{
-			"/PROGRAMDATA/", // system-wide app data
-			"/USERS/",       // user home trees
-			"/TEMP/",        // common temp alias
-			"/TMP/",         // common temp alias
-		}
-		for _, prefix := range winSafe {
-			if strings.HasPrefix(upper, prefix) {
-				return true
-			}
-		}
-	}
-
-	return false
-}
-
-// loadConfigFromFile loads and applies configuration from a JSON file
+// loadConfigFromFile loads and applies configuration from a JSON file.
+//
+// WHY there is no path allowlist: the path comes from the application itself.
+// SetConfigFile and AddConfigPath are called by the program, and LoadConfig runs
+// before parseArguments, so no command-line value can ever reach here. Until
+// v1.1.9 this function rejected any path containing ".." and any absolute path
+// outside a five-prefix allowlist. That blocked the user's own home directory --
+// the location AddConfigPath's documentation uses as its example -- and a
+// directory merely named "v1..2", while still allowing /tmp, the one
+// world-writable prefix on the list and therefore the only one where planting a
+// symlink is worth anything.
+//
+// What is checked instead is that the target is a regular file. Reading a
+// character device such as /dev/zero as configuration exhausts memory, and
+// opening a FIFO blocks Parse until a writer appears -- an unkillable hang that
+// the old allowlist permitted, since a FIFO under /tmp passed it. os.Stat
+// answers both questions without opening anything.
+//
+// This is a robustness check, not a security boundary. An application that
+// derives the config path from untrusted input must validate and confine it
+// before calling SetConfigFile.
+//
+// Symlinks are followed, because that is what a config file is usually expected
+// to do -- a Kubernetes ConfigMap key and a dotfile manager's link both rely on
+// it. A program reading configuration from a directory other local users can
+// write to should call EnableStrictConfigPaths, which refuses a symlinked final
+// component at the open itself.
 func (fs *FlagSet) loadConfigFromFile(path string) error {
-	// Validate path to prevent directory traversal attacks
-	if strings.Contains(path, "..") {
-		return fmt.Errorf("invalid config file path: %s", path)
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("failed to read config file %s: %v", path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("config file %s is not a regular file", path)
 	}
 
-	// WHY filepath.IsAbs: the old HasPrefix(path, "/") missed Windows
-	// absolute paths like C:\config.json -- an attacker could bypass the
-	// allowlist entirely on Windows.
-	if filepath.IsAbs(path) && !isSafeAbsolutePath(path) {
-		return fmt.Errorf("invalid config file path: %s", path)
+	f, err := openConfigFile(path, fs.strictPaths)
+	if err != nil {
+		if errors.Is(err, errSymlinkRefused) {
+			return fmt.Errorf("config file %s is a symbolic link (strict config paths enabled)", path)
+		}
+		return fmt.Errorf("failed to read config file %s: %v", path, err)
+	}
+	defer func() { _ = f.Close() }()
+
+	// Re-check through the open handle: os.Stat above answered before the file
+	// was opened, and this one cannot be raced against a replacement.
+	if info, err := f.Stat(); err != nil {
+		return fmt.Errorf("failed to read config file %s: %v", path, err)
+	} else if !info.Mode().IsRegular() {
+		return fmt.Errorf("config file %s is not a regular file", path)
 	}
 
-	data, err := os.ReadFile(path) // #nosec G304 - path is validated above
+	data, err := io.ReadAll(f)
 	if err != nil {
 		return fmt.Errorf("failed to read config file %s: %v", path, err)
 	}
@@ -2245,8 +2374,9 @@ func (fs *FlagSet) applyConfig(config map[string]interface{}) error {
 			continue // Skip unknown flags
 		}
 
-		// Only apply config value if flag wasn't set by command line
-		if flag.changed {
+		// setFlagValueFromConfig enforces this too; skipping early avoids the
+		// conversion work for a value that would be discarded anyway.
+		if !flag.canSet(sourceConfig) {
 			continue
 		}
 
@@ -2325,6 +2455,33 @@ func (fs *FlagSet) setFloat64ValueFromConfig(flag *Flag, value interface{}, name
 	return nil
 }
 
+// setDurationValueFromConfig sets a duration flag from a config file value.
+// JSON has no duration type, so two encodings are accepted: the human-readable
+// string understood by time.ParseDuration ("30s", "1m30s"), and a plain number
+// of nanoseconds, which is what encoding/json emits for a time.Duration.
+func (fs *FlagSet) setDurationValueFromConfig(flag *Flag, value interface{}, name string) error {
+	var duration time.Duration
+	switch v := value.(type) {
+	case string:
+		parsed, err := time.ParseDuration(v)
+		if err != nil {
+			return fmt.Errorf("invalid duration for flag %s: %v", name, err)
+		}
+		duration = parsed
+	case float64: // JSON numbers decode to float64; treated as nanoseconds
+		duration = time.Duration(v)
+	default:
+		return fmt.Errorf("expected duration string or number for flag %s, got %T", name, value)
+	}
+	flag.value = duration
+	if flag.ptr != nil {
+		if ptr, ok := flag.ptr.(*time.Duration); ok {
+			*ptr = duration
+		}
+	}
+	return nil
+}
+
 func (fs *FlagSet) setStringSliceValueFromConfig(flag *Flag, value interface{}, name string) error {
 	if slice, ok := value.([]interface{}); ok {
 		strSlice := make([]string, len(slice))
@@ -2352,11 +2509,12 @@ func (fs *FlagSet) setFlagValueFromConfig(name string, value interface{}) error 
 		return fmt.Errorf("unknown flag: %s", name)
 	}
 
-	// Apply security validation for string values from config
-	if strValue, ok := value.(string); ok {
-		if err := fs.validateSecurityConstraints(name, strValue); err != nil {
-			return fmt.Errorf("config security validation failed: %v", err)
-		}
+	if !flag.canSet(sourceConfig) {
+		return nil
+	}
+
+	if err := fs.screenConfigValue(name, value); err != nil {
+		return err
 	}
 
 	// Set value based on type using dedicated functions
@@ -2364,11 +2522,41 @@ func (fs *FlagSet) setFlagValueFromConfig(name string, value interface{}) error 
 		return err
 	}
 
-	// Mark flag as changed since it was loaded from config
-	flag.changed = true
+	// Record the config file as this value's origin.
+	flag.source = sourceConfig
 
 	// Validate the value if validator is set
 	return fs.validateFlagValue(flag)
+}
+
+// screenConfigValue applies input hygiene to a value decoded from a config
+// file. JSON carries strings in two shapes, and both reach a flag: a bare
+// string, and the elements of an array bound to a string slice.
+//
+// WHY both: until v1.1.9 only the bare string was screened, so
+// {"tags": ["bad\u0000item"]} reached the flag untouched while
+// --tags "bad\x00item" was rejected. Whether a value is accepted must not
+// depend on which layer supplied it.
+//
+// Numbers and booleans need no screening: they cannot carry a byte sequence.
+func (fs *FlagSet) screenConfigValue(name string, value interface{}) error {
+	switch v := value.(type) {
+	case string:
+		if err := fs.validateInputHygiene(name, v); err != nil {
+			return fmt.Errorf("config security validation failed: %v", err)
+		}
+	case []interface{}:
+		for i, item := range v {
+			str, ok := item.(string)
+			if !ok {
+				continue // type mismatch is reported by the element setter
+			}
+			if err := fs.validateInputHygiene(name+"["+strconv.Itoa(i)+"]", str); err != nil {
+				return fmt.Errorf("config security validation failed: %v", err)
+			}
+		}
+	}
+	return nil
 }
 
 // setConfigValueByType sets the flag value from config based on its type
@@ -2382,6 +2570,8 @@ func (fs *FlagSet) setConfigValueByType(flag *Flag, value interface{}, name stri
 		return fs.setBoolValueFromConfig(flag, value, name)
 	case "float64":
 		return fs.setFloat64ValueFromConfig(flag, value, name)
+	case "duration":
+		return fs.setDurationValueFromConfig(flag, value, name)
 	case "stringSlice":
 		return fs.setStringSliceValueFromConfig(flag, value, name)
 	default:
@@ -2418,8 +2608,10 @@ func (fs *FlagSet) LoadEnvironmentVariables() error {
 	}
 
 	for name, flag := range fs.flags {
-		// Skip if flag was already set via command line
-		if flag.changed {
+		// setFlagValueFrom enforces this too; skipping early avoids the env
+		// lookup for a value that would be discarded anyway. A value from the
+		// config file ranks lower and is overridden here.
+		if !flag.canSet(sourceEnv) {
 			continue
 		}
 
@@ -2434,7 +2626,7 @@ func (fs *FlagSet) LoadEnvironmentVariables() error {
 		}
 
 		// Set the flag value from environment variable
-		if err := fs.setFlagValue(name, envValue); err != nil {
+		if err := fs.setFlagValueFrom(name, envValue, sourceEnv); err != nil {
 			return fmt.Errorf("invalid environment variable %s=%s: %v", envVarName, envValue, err)
 		}
 	}

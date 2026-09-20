@@ -1,0 +1,273 @@
+Flash-Flags v1.1.9 - Source Precedence, Input Screening & Documentation Accuracy
+=================================================================================
+
+Release Date: 2026-09-20
+Type: Bug fix / behavioural change
+
+FIXED
+-----
+- Configuration source precedence was inverted between config files and
+  environment variables. A value found in a JSON config file marked the flag as
+  "changed", which caused LoadEnvironmentVariables to skip it, so the config
+  file silently won over the environment -- the opposite of the documented
+  contract.
+
+  Each flag now records which source supplied its value (default < config < env
+  < cli) instead of a single boolean. A source writes a flag only when it ranks
+  at least as high as the one that currently owns the value, which makes the
+  ordering independent of the order the loaders run in. Calling LoadConfig or
+  LoadEnvironmentVariables manually after Parse can no longer downgrade a
+  command-line value either.
+
+  The rule has a single definition, Flag.canSet, and is enforced inside both
+  write paths -- setFlagValueFrom for parsed strings and setFlagValueFromConfig
+  for typed JSON values -- rather than by their callers, so a loader added later
+  cannot reintroduce the inversion by forgetting to check. The loaders still
+  test the same predicate first, purely to skip work on a value that would be
+  discarded. A write from a lower-priority source is discarded and reported as
+  success: being outranked is the normal outcome of layered configuration, not
+  a failure. Such a value is neither parsed nor validated, so a leftover
+  environment variable cannot fail a parse whose result it would never reach.
+  The comparison is >= rather than >, so a repeated command-line flag still
+  keeps its last value.
+
+- Duration flags could not be loaded from a configuration file: any config
+  containing a duration key failed Parse with "unsupported flag type: duration".
+  JSON has no duration type, so both encodings are now accepted -- the string
+  form understood by time.ParseDuration ("30s", "1m30s") and a plain number of
+  nanoseconds, which is what encoding/json emits for a time.Duration.
+
+- Configuration file values were screened only when they decoded to a string,
+  so the elements of a JSON array reached the flag unscreened. A config holding
+  {"tags": ["bad\u0000item"]} was accepted while --tags "bad\x00item" was
+  rejected, which made the guarantee depend on which layer supplied the value.
+  Array elements bound to a string slice are now screened like any other string.
+
+  The per-element loop on the command-line path has been removed as part of
+  this. It was unreachable: the whole value is screened before it is split, and
+  input hygiene is a per-character property, so no element can fail a check the
+  joined string already passed. The screening that was missing was on the config
+  path, which never passes through that function.
+
+- The example modules under examples/ and stdlib/ did not build after the v1.1.8
+  toolchain bump: their go directive still said 1.23 while the parent module
+  required 1.25.9. All module go directives are now aligned at 1.25.9.
+
+CHANGED
+-------
+- Input screening no longer tries to infer intent from a value's contents.
+
+  It previously rejected any value containing "/etc/", "/proc/", "/sys/",
+  "rm -rf", "drop table", "$(", a backtick, the %n %s %x %d %c %p format verbs,
+  "../" or "..\\", or matching a Windows device name. That denylist stopped no
+  attack: "a; rm -rf ~", "deploy && restart", "cat f | grep x" and
+  "..%2f..%2fetc" all passed it untouched, because ';', '|', '&&' and percent
+  encoding were not on the list. Meanwhile it rejected ordinary input --
+  "--config /etc/myapp.conf", a --command argument holding "rm -rf /tmp/build",
+  a --template of "%s-%d.log", and the string "Comp Ltd", which matched the
+  "COM" device prefix.
+
+  What remains is input hygiene, which does not depend on where a value is
+  headed: the 10000-byte length cap, null bytes, and C0 control characters other
+  than tab, newline and carriage return. The fast path is unchanged.
+
+  If you relied on the removed checks as a security control, they were not one.
+  Screen values at the point of use, where their meaning is known: run os/exec
+  without a shell, parameterize SQL, resolve and confine paths before opening.
+
+- The over-length error now reports bytes rather than characters:
+
+      before: flag --data value too long: 15000 chars (max: 10000)
+      after:  flag --data value too long: 15000 bytes (max: 10000)
+
+  The limit was always on bytes -- it is compared against len(value), which
+  counts bytes rather than runes -- so the count was right and its unit was
+  wrong. The gap is only visible outside ASCII, and there it is wide: 6000
+  accented characters are 12000 bytes, and were rejected with "12000 chars",
+  which reads as a limit twice as generous as the one being enforced.
+
+  This is the only user-visible string this release changes. A test asserting
+  on the word "chars" in that message will need updating; the rest of the
+  message, including the counts, is unchanged.
+
+- The configuration file path allowlist has been removed.
+
+  loadConfigFromFile previously rejected any path containing ".." and any
+  absolute path outside five prefixes (/tmp/, /opt/, /etc/, /var/tmp/,
+  /var/folders/, plus Windows equivalents). The path never comes from parsed
+  input -- SetConfigFile and AddConfigPath are called by the application, and
+  LoadConfig runs before parseArguments -- so the allowlist filtered a value
+  that was never hostile, while causing real breakage:
+
+    * A config under the user's home directory was rejected. That is the
+      location AddConfigPath's own documentation uses as its example, and one of
+      the three default auto-discovery paths.
+    * A directory merely named "v1..2" was rejected by the ".." substring check.
+    * /tmp and /var/tmp were allowed. They are the world-writable prefixes on
+      the list, and therefore the only ones where planting a symlink before
+      startup is worth anything -- which worked, and still does.
+
+  The check is now that the target is a regular file. This closes a denial of
+  service the allowlist permitted: a FIFO under /tmp passed it, and os.ReadFile
+  on a FIFO blocks until a writer appears, hanging Parse indefinitely. Reading a
+  character device such as /dev/zero is refused for the same reason. os.Stat
+  answers both without opening anything.
+
+  This is a robustness check, not a security boundary. An application deriving
+  the config path from untrusted input must validate and confine it before
+  calling SetConfigFile. Symlinks are still followed by default; see
+  EnableStrictConfigPaths under ADDED for the opt-in that refuses them.
+
+- Configuration auto-discovery advertised default search directories it never
+  used. AddConfigPath's documentation, and the API reference, stated that with
+  no paths added discovery searches ".", "./config" and $HOME. LoadConfig
+  returns early when neither a config file nor a path is set, and findConfigFile
+  returns at the top when a config file is set, so the default list was
+  unreachable in both directions -- the coverage profile showed the branch at
+  zero hits against the full suite.
+
+  The dead branch has been removed and the documentation corrected, rather than
+  the defaults implemented. Implementing them would mean a program that never
+  opted into configuration files silently loading ./<name>.json whenever one
+  happened to sit in the working directory, which changes flag values from
+  outside the program's control.
+
+  Removing it also cleared the one gosec finding on the package: G703 (CWE-22,
+  path traversal via taint analysis) flagged os.Stat on a path joined from
+  os.Getenv("HOME"), which existed only in that unreachable branch. The PR
+  workflow runs gosec without "|| true", so that gate now passes.
+
+  Documented alongside it: AddConfigPath does not expand its argument, so
+  "$HOME/.myapp" looks for a directory literally named "$HOME". The examples in
+  doc.go and the API reference used that form and could never have matched; they
+  now resolve the home directory with os.UserHomeDir, which is also the portable
+  call, since HOME is normally unset on Windows.
+
+ADDED
+-----
+- FlagSet.EnableStrictConfigPaths() makes Parse refuse a configuration file
+  whose final path component is a symbolic link, for both an explicitly named
+  file and one found by auto-discovery. It is off by default.
+
+  It is opt-in because following a symlink is normally what a config file is
+  expected to do: a Kubernetes ConfigMap mount projects every key as a symlink
+  into a ..data directory, and dotfile managers such as GNU Stow and chezmoi
+  link a config into place from a repository. Refusing symlinks by default
+  would break both, on the platform where they are most common. Turn it on when
+  the program reads configuration from a directory other local users can write
+  to -- the classic /tmp symlink attack, which is the only case it is for.
+
+  Only the final component is examined, so a symlinked parent directory is
+  traversed normally. That is deliberate: /tmp on macOS is itself a symlink to
+  /private/tmp, and rejecting paths through it would make the setting unusable
+  there.
+
+  The guarantee differs by platform, and the documentation says so rather than
+  implying parity. On Unix the file is opened with O_NOFOLLOW, so the kernel
+  refuses the call: the check and the open are one operation and cannot be
+  raced. On Windows the final component is checked with Lstat before the open,
+  because Go exposes no portable O_NOFOLLOW there, so a replacement racing
+  between the two could still be followed; creating a symbolic link on Windows
+  requires SeCreateSymbolicLinkPrivilege or Developer Mode, which narrows the
+  exposure without closing it. The two implementations live in build-tagged
+  files rather than behind runtime.GOOS, because the Unix one needs syscall
+  constants that do not exist on Windows.
+
+  Reading a config file now goes through the opened handle -- open, verify the
+  handle is a regular file, then read -- instead of stat-then-ReadFile. Once
+  open, the descriptor refers to a fixed inode, so the type check answers for
+  what was actually opened.
+
+- Flag.Source() and FlagSet.Source(name) report which configuration layer
+  supplied a flag's current value: "cli", "env", "config" or "default". Because
+  sources are resolved by precedence, the result names the highest-priority
+  source that set the flag, not the last one consulted.
+
+DOCUMENTATION
+-------------
+- Removed the "lock-free" claim from the package documentation, README and API
+  reference. The package contains no mutexes and no atomic operations; the real
+  guarantee is that reads are safe once Parse has returned, because nothing
+  mutates the flag set afterwards. Reset and ResetFlag are mutating calls and
+  racing them against a read is a data race, which the race detector reports.
+  The Thread Safety sections now state this explicitly.
+
+- Corrected the description of input screening. The previous text claimed
+  protection against "shell metacharacters" and command injection in general,
+  which the denylist never delivered -- see CHANGED for what it did and did not
+  catch. The documentation now lists exactly what is checked, states that this
+  is a blunt input filter rather than a security boundary, and says where
+  escaping belongs instead.
+
+- Corrected the description of config file path handling. The previous text
+  described the prefix allowlist as preventing directory traversal. It did not:
+  the path is chosen by the application, and the allowlist admitted /tmp while
+  refusing the user's home directory. The documentation now describes the
+  regular-file check that replaced it, states that symlinks are followed by
+  default, and points at EnableStrictConfigPaths for programs that need them
+  refused.
+
+- The fuzz suite asserted the removed denylist as an invariant: an accepted
+  value was required not to contain "/etc/", "rm -rf", "%s" and friends. That
+  encoded the antipattern as a test, making "--config /etc/myapp.conf" a
+  security failure while "a; rm -rf ~" passed clean. It now asserts what the
+  parser actually promises: accepted values carry no null byte or control
+  character, and a value arrives exactly as it was supplied.
+
+- All validator examples now use the comma-ok form of the type assertion. A bare
+  val.(int) panics on mismatch and the panic propagates out of Parse; the
+  SetValidator documentation now says so.
+
+- Corrected stale Go version (1.23) and version number (v1.1.5) references
+  across doc.go, README.md and API-REFERENCE.md.
+
+TOOLING
+-------
+- gosec exclusions now live in .codecov.yml's neighbour .gosec.json, shared by
+  both workflows. ci.yml previously passed -conf .gosec.json to a file that was
+  never committed, so that scan ran unconfigured, and swallowed the result twice
+  with continue-on-error and a trailing "|| true". pr.yml repeated the exclusion
+  list inline, so the two gates could drift apart. Both now read the same file,
+  each exclusion carries its reason, and ci.yml reports its real exit status.
+
+- configopen_windows.go is excluded from codecov. Coverage is uploaded from the
+  ubuntu-latest job only, so a file kept out of the Linux build by its build tag
+  never appears in the profile; counting its statements as untested would
+  penalise the report for a reason no test can fix.
+
+- .gitignore listed the example binaries under the wrong names. go build names
+  its output after the module, so examples/basic emits basic-demo, not basic.
+  Building the examples left untracked files behind every time.
+
+COMPATIBILITY
+-------------
+No exported API was removed or changed, and nothing new is enabled by default.
+Changed() keeps its exact previous semantics ("the flag no longer holds its
+default value") and is now derived from the recorded source.
+
+Values and paths that used to be refused are now accepted. Input screening no
+longer rejects a value for its contents beyond the hygiene checks, and a config
+path is no longer matched against a prefix allowlist. Nothing that worked before
+stops working because of either.
+
+Three things are now refused that were not:
+
+  - A config path pointing at a directory, a FIFO or a device. Each of these
+    previously failed later, or hung: reading a FIFO blocks Parse until a
+    writer appears.
+  - A control character or null byte inside a string-slice element loaded from
+    a config file. The same value was already refused from the command line and
+    the environment; this closes the inconsistency rather than tightening the
+    rule.
+  - A symlinked config file, but only for programs that call
+    EnableStrictConfigPaths. It is off by default.
+
+One error message changes wording: the over-length error says "bytes" where it
+said "chars". The limit itself is unchanged, and no other user-visible string in
+the package is touched.
+
+One resolved value can change without any error being raised: an application
+that unknowingly relied on a config file overriding an environment variable
+will see the environment take effect instead. That is the documented and
+intended order, and FlagSet.Source can be used to audit where each value comes
+from.

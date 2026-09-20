@@ -1,16 +1,17 @@
-// Package flashflags provides ultra-fast, zero-dependency, lock-free command-line flag parsing for Go.
+// Package flashflags provides ultra-fast, zero-dependency command-line flag parsing for Go.
 //
 // Flash-flags is designed for maximum performance with minimal memory allocations,
-// comprehensive security hardening, and full compatibility with Go 1.23+.
-// It provides a clean API similar to the standard library flag package but with
-// significant security improvements and additional features.
+// input hardening, and compatibility with Go 1.25.9+.
+// It provides a clean API similar to the standard library flag package, with
+// additional features: configuration files, environment variables, validation,
+// dependencies and grouped help.
 //
 // Key Features:
 //
-//   - Security-hardened parsing with protection against injection attacks
-//   - Ultra-fast parsing (924ns/op) with only 132ns security overhead
+//   - Input hygiene screening -- see Input Hardening below
+//   - Ultra-fast parsing (924ns/op)
 //   - Zero external dependencies (only standard library)
-//   - Safe for concurrent reads after Parse() -- no locks needed at runtime
+//   - Safe for concurrent reads after Parse() -- see Thread Safety below
 //   - Drop-in replacement for Go standard library flag package
 //   - Support for configuration files (JSON)
 //   - Environment variable integration
@@ -21,18 +22,33 @@
 //   - Full support for remaining arguments (Args(), NArg(), Arg(i))
 //   - Stdlib-compatible boolean flag behavior
 //
-// Security Features (v1.1.5+):
+// Input Hardening:
 //
-//   - Command Injection Protection: Blocks $(…), backticks, and shell metacharacters
-//   - Path Traversal Prevention: Prevents ../ and ..\ directory traversal attacks
-//   - Buffer Overflow Safeguards: 10KB input limits with fast-path optimization
-//   - Format String Attack Blocking: Detects and blocks %n, %s format string exploits
-//   - Input Sanitization: Removes null bytes and dangerous control characters
-//   - Windows Device Protection: Blocks Windows reserved names (CON, PRN, AUX, etc.)
-//   - Fast-path optimization: Simple alphanumeric inputs bypass heavy validation
+// Flag values are screened for input that is malformed as a string, whatever it
+// is later used for:
 //
-// The security overhead is minimal (132ns per operation, 17%) while providing
-// comprehensive protection against common attack vectors.
+//   - Length: values above 10000 bytes are rejected
+//   - Null bytes: a value containing \x00 is rejected, because that byte
+//     truncates the string in any C API it reaches
+//   - Control characters: C0 controls other than tab, newline and carriage
+//     return are rejected, since they are terminal escape sequences, not data
+//   - Fast path: values under 100 bytes made only of [A-Za-z0-9-_.:] skip the
+//     scan, because such a value cannot contain either
+//
+// The screening stops there, deliberately. A flag parser does not know whether
+// a value will reach a shell, a SQL driver, an fmt verb or a file open, so it
+// cannot decide which substrings are dangerous. Escaping belongs at the point
+// of use: run os/exec without a shell, parameterize SQL, and resolve and
+// confine paths before opening them.
+//
+// Until v1.1.9 the screening also rejected values containing "/etc/", "/proc/",
+// "/sys/", "rm -rf", "drop table", "$(", a backtick, the %n %s %x %d %c %p
+// format verbs, "../" and Windows device names. That denylist stopped no
+// attack -- "a; rm -rf ~", "deploy && restart" and "..%2f..%2fetc" all passed
+// it untouched -- while rejecting ordinary input such as
+// "--config /etc/myapp.conf" or a --command argument containing
+// "rm -rf /tmp/build". It has been removed. If you relied on it as a security
+// control, it was not one; screen values where you know what they mean.
 //
 // Supported Flag Syntax:
 //
@@ -86,6 +102,14 @@
 //   - After Parse() completes, all flag value reads are safe for concurrent access
 //     without any locks -- the underlying maps are never written again
 //   - SetValidator() and other mutating methods must also be called before Parse()
+//   - Reset() and ResetFlag() are mutating calls too. Calling either one while
+//     another goroutine reads is a data race, and the race detector will report
+//     it. An application that re-parses at runtime must synchronize on its own,
+//     or build a fresh FlagSet and swap it behind a pointer
+//
+// There are no mutexes and no atomic operations in this package, which is what
+// keeps a read down to a plain map lookup. The safety above comes from the
+// absence of writes after Parse, not from synchronization.
 //
 // In short: register flags, call Parse(), then read freely from any goroutine.
 //
@@ -170,7 +194,10 @@
 //
 //		// Validation and constraints
 //		fs.SetValidator("port", func(val interface{}) error {
-//			port := val.(int)
+//			port, ok := val.(int)
+//			if !ok {
+//				return fmt.Errorf("expected int, got %T", val)
+//			}
 //			if port < 1024 || port > 65535 {
 //				return fmt.Errorf("port must be 1024-65535, got %d", port)
 //			}
@@ -193,7 +220,7 @@
 //			log.Fatalf("Parse error: %v", err)
 //		}
 //
-//		// Use parsed values (thread-safe access)
+//		// Use parsed values (safe to read concurrently now that Parse returned)
 //		fmt.Printf("Server: %s:%d (debug=%t, timeout=%v, rate=%.1f)\n",
 //			*host, *port, *debug, *timeout, *rate)
 //		fmt.Printf("Tags: %v\n", *tags)
@@ -203,15 +230,37 @@
 //
 // Configuration File Support:
 //
-// Flash-flags can load configuration from JSON files. The configuration is loaded
-// with lower priority than command line arguments, allowing command line to override
-// configuration file values.
+// Flash-flags can load configuration from JSON files. A config file is the
+// lowest-priority source above the declared defaults, so both environment
+// variables and command-line arguments override it. Use FlagSet.Source to see
+// which layer supplied a given value.
+//
+// JSON has no duration type, so a duration flag accepts either the string form
+// understood by time.ParseDuration ("30s", "1m30s") or a plain number of
+// nanoseconds.
+//
+// The config file must be a regular file; a directory, a FIFO or a device is
+// refused. Symlinks are followed, since a Kubernetes ConfigMap key and a
+// dotfile manager's link both depend on that. A program reading configuration
+// from a directory other local users can write to should call
+// EnableStrictConfigPaths, which refuses a symlinked final path component --
+// the classic /tmp symlink attack. It is opt-in precisely because refusing
+// symlinks by default would break the two layouts above.
 //
 //	fs := flashflags.New("myapp")
 //	fs.SetConfigFile("./config.json")
-//	// or use auto-discovery
+//
+//	// or use auto-discovery. Paths are used verbatim: "$HOME/.myapp" would
+//	// look for a directory literally named "$HOME", so resolve the home
+//	// directory yourself. os.UserHomeDir is the portable call -- HOME is
+//	// normally unset on Windows, where the home lives in USERPROFILE.
 //	fs.AddConfigPath("./config")
-//	fs.AddConfigPath("$HOME/.myapp")
+//	if home, err := os.UserHomeDir(); err == nil {
+//		fs.AddConfigPath(filepath.Join(home, ".myapp"))
+//	}
+//
+// A FlagSet with neither a config file nor an added path loads no
+// configuration: there are no default search directories.
 //
 // Environment Variable Integration:
 //
@@ -241,7 +290,10 @@
 //
 //	// Custom validation with detailed error messages
 //	fs.SetValidator("port", func(value interface{}) error {
-//		port := value.(int)
+//		port, ok := value.(int)
+//		if !ok {
+//			return fmt.Errorf("expected int, got %T", value)
+//		}
 //		if port < 1024 || port > 65535 {
 //			return fmt.Errorf("port must be 1024-65535, got %d", port)
 //		}
@@ -258,15 +310,15 @@
 //
 // Performance and Benchmarks:
 //
-// Flash-flags delivers exceptional performance with comprehensive security hardening:
+// Flash-flags delivers exceptional performance:
 //
 //	Benchmark Results (AMD Ryzen 5 7520U, Go 1.23+, v1.1.5):
-//	  Flash-flags (secure):      924 ns/op    (with full security validation)
-//	  Go standard library flag:  792 ns/op    (baseline, no security)
+//	  Flash-flags:               924 ns/op    (with input screening)
+//	  Go standard library flag:  792 ns/op    (baseline, no screening)
 //	  Spf13/pflag:             1,322 ns/op    (43% slower than flash-flags)
 //	  Other libraries:       7,500+ ns/op    (8-10x slower)
 //
-//	Security overhead: Only 132ns (17%) for complete protection
+//	Screening overhead: roughly 132ns (17%)
 //
 //	Internal performance metrics (zero allocations):
 //	  BenchmarkGetters/GetString  136M    9.01 ns/op   0 B/op   0 allocs/op
@@ -275,8 +327,8 @@
 //	  BenchmarkGetters/GetDuration 134M   8.86 ns/op   0 B/op   0 allocs/op
 //
 // Key performance characteristics:
-//   - 924ns with full security (command injection, path traversal, format string protection)
-//   - 43% faster than pflag while providing equivalent functionality plus security
+//   - 924ns with input screening enabled
+//   - 43% faster than pflag, with equivalent functionality
 //   - Sub-nanosecond flag value access (8-9ns average)
 //   - Zero allocations for all getter operations after parsing
 //   - Concurrent-safe reads after Parse() (no locks needed at runtime)
@@ -291,7 +343,7 @@
 //
 // Compatibility and Requirements:
 //
-//   - Go 1.23 or later (follows LTS guidelines)
+//   - Go 1.25.9 or later
 //   - Zero external dependencies
 //   - Full backward compatibility maintained
 //   - Drop-in replacement for standard library flag package
@@ -307,41 +359,34 @@
 //   - Type conversion errors: "invalid int value for flag --port: abc"
 //   - Configuration errors: "config file error: failed to read config.json"
 //   - Help requests: "help requested" (special case, not a real error)
-//   - Security validation errors: "flag --name contains dangerous pattern"
-//   - Buffer overflow errors: "flag --data value too long: 15000 chars (max: 10000)"
+//   - Input screening errors: "flag --name contains null byte at position 3"
+//   - Over-length errors: "flag --data value too long: 15000 bytes (max: 10000)"
 //
 // All errors include the flag name and specific details to help with debugging.
 //
-// Security Validation:
+// Input Screening:
 //
-// FlashFlags automatically validates all input against common security threats:
+// See "Input Hardening" above for what is checked and what is deliberately not.
 //
-//   - Command injection: Detects $(...), backticks, pipes, redirections
-//   - Path traversal: Blocks ../ and ..\ sequences
-//   - Format strings: Prevents %n, %s, %x format string attacks
-//   - Null bytes: Removes \x00 null byte injection attempts
-//   - Control chars: Filters dangerous control characters (except \t, \n, \r)
-//   - Buffer overflow: Enforces 10KB input size limit per flag value
-//   - Windows devices: Blocks CON, PRN, AUX, COM1-9, LPT1-9 device names
-//
-// Fast-path optimization: Simple alphanumeric values (a-z, A-Z, 0-9, -, _, ., :)
-// bypass heavy validation for optimal performance on common use cases.
-//
-// Example security validation:
+// Example:
 //
 //	fs := flashflags.New("myapp")
 //	cmd := fs.String("command", "", "Command to execute")
 //
-//	// These will be rejected with security errors:
-//	fs.Parse([]string{"--command", "rm -rf /"})           // Command injection
-//	fs.Parse([]string{"--command", "../../etc/passwd"})   // Path traversal
-//	fs.Parse([]string{"--command", "%n%n%n%n"})          // Format string attack
+//	// Rejected -- malformed as a string:
+//	fs.Parse([]string{"--command", "bad\x00value"})  // null byte
+//	fs.Parse([]string{"--command", "\x1b[31mred"})   // control character
+//
+//	// Accepted -- the parser does not guess what these mean:
+//	fs.Parse([]string{"--command", "rm -rf /tmp/build"})
+//	fs.Parse([]string{"--command", "/etc/myapp.conf"})
+//	fs.Parse([]string{"--command", "a; rm -rf ~"})
 //
 // Version and Compatibility:
 //
-//   - Current version: v1.1.5 (October 2025)
-//   - Requires: Go 1.23 or later
-//   - Changelog: See changelog/v1.1.5.txt for latest updates
+//   - Current version: v1.1.9
+//   - Requires: Go 1.25.9 or later
+//   - Changelog: See changelog/ for release notes
 //   - Repository: github.com/agilira/flash-flags
 //   - License: MPL-2.0 (Mozilla Public License 2.0)
 //

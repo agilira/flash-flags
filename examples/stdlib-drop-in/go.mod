@@ -1,6 +1,6 @@
 module stdlib-drop-in
 
-go 1.23
+go 1.25.9
 
 require github.com/agilira/flash-flags/stdlib v0.0.0
 

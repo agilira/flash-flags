@@ -151,12 +151,12 @@ func FuzzParse(f *testing.F) {
 				t.Errorf("SECURITY ISSUE: Tags slice extremely long: %d items", len(*tags))
 			}
 
-			// Check for dangerous values that should be sanitized
-			if containsObviousSecurityThreat(*host) {
-				t.Errorf("SECURITY ISSUE: Host contains dangerous content: %q", truncateString(*host, 100))
+			// An accepted value must satisfy the hygiene contract.
+			if violatesInputHygiene(*host) {
+				t.Errorf("HYGIENE VIOLATION: accepted host holds a null byte or control character: %q", truncateString(*host, 100))
 			}
-			if containsObviousSecurityThreat(*config) {
-				t.Errorf("SECURITY ISSUE: Config path contains dangerous content: %q", truncateString(*config, 100))
+			if violatesInputHygiene(*config) {
+				t.Errorf("HYGIENE VIOLATION: accepted config holds a null byte or control character: %q", truncateString(*config, 100))
 			}
 
 			// Verify port is in valid range (if it was set)
@@ -244,16 +244,16 @@ func FuzzParseStringSlice(f *testing.F) {
 				t.Errorf("SECURITY ISSUE: StringSlice returned excessive items: %d", len(result))
 			}
 
-			// Since we have security validation now, items should be safe
-			// But we still check for issues that might slip through
+			// Every accepted element must satisfy the hygiene contract; the
+			// screening runs per element, not on the joined string.
 			totalLength := 0
 			for _, item := range result {
 				totalLength += len(item)
 				if len(item) > 10000 {
 					t.Logf("Long item found (should have been blocked): %d chars", len(item))
 				}
-				if containsObviousSecurityThreat(item) {
-					t.Logf("Potentially dangerous item found (should have been blocked): %q", truncateString(item, 100))
+				if violatesInputHygiene(item) {
+					t.Errorf("HYGIENE VIOLATION: accepted slice element holds a null byte or control character: %q", truncateString(item, 100))
 				}
 			}
 
@@ -424,15 +424,20 @@ func FuzzEnvironmentVariables(f *testing.F) {
 		}
 
 		if err != nil {
-			// Security validation should reject dangerous values - this is expected
-			t.Logf("LoadEnvironmentVariables correctly rejected dangerous value: %v", err)
+			// Malformed values are rejected - this is expected
+			t.Logf("LoadEnvironmentVariables correctly rejected a malformed value: %v", err)
 		} else {
-			// Check loaded values for security issues
 			if len(*host) > 10000 {
-				t.Errorf("SECURITY ISSUE: Host from env var extremely long: %d chars", len(*host))
+				t.Errorf("HYGIENE VIOLATION: accepted host from env is over the length cap: %d chars", len(*host))
 			}
-			if containsObviousSecurityThreat(*host) {
-				t.Errorf("SECURITY ISSUE: Host from env contains dangerous content: %q", truncateString(*host, 100))
+			if violatesInputHygiene(*host) {
+				t.Errorf("HYGIENE VIOLATION: accepted host from env holds a null byte or control character: %q", truncateString(*host, 100))
+			}
+			// The value must arrive intact: a parser that silently rewrites
+			// input is worse than one that rejects it.
+			if fs.Changed("host") && *host != envValue {
+				t.Errorf("FIDELITY VIOLATION: env value %q arrived as %q",
+					truncateString(envValue, 100), truncateString(*host, 100))
 			}
 			t.Logf("LoadEnvironmentVariables succeeded, host=%q", truncateString(*host, 50))
 		}
@@ -515,48 +520,26 @@ func FuzzFlagValidation(f *testing.F) {
 // Helper Functions
 // =============================================================================
 
-// containsObviousSecurityThreat checks for obvious security threats in strings
-func containsObviousSecurityThreat(s string) bool {
-	threats := []string{
-		"\x00",  // Null byte
-		"../",   // Path traversal
-		"..\\",  // Windows path traversal
-		"/etc/", // Unix system paths
-		"/proc/",
-		"/sys/",
-		"\\windows\\", // Windows system paths
-		"\\system32\\",
-		"$(", "`", // Command injection
-		"%n", "%s", "%x", // Format string
-		"<script", // XSS
-		"javascript:",
-		"rm -rf",     // Dangerous commands
-		"DROP TABLE", // SQL injection hints
-		"eval(",
-		"exec(",
-	}
-
-	lower := strings.ToLower(s)
-	for _, threat := range threats {
-		if strings.Contains(lower, threat) {
+// violatesInputHygiene reports whether a value that Parse accepted breaks the
+// contract the parser actually promises: no null byte, and no C0 control
+// character other than tab, newline or carriage return.
+//
+// WHY this and not a denylist: until v1.1.9 this helper listed "/etc/",
+// "rm -rf", "$(", "%s" and friends, and asserted that no accepted value could
+// contain them. That encoded an antipattern as a test invariant -- it made
+// "--config /etc/myapp.conf" a security failure while "a; rm -rf ~" passed
+// clean, because ';' was not on the list. A flag parser cannot know where a
+// value is headed, so the property worth fuzzing is that it transports the
+// value faithfully and rejects only what is malformed as a string.
+func violatesInputHygiene(s string) bool {
+	for _, r := range s {
+		if r == '\x00' {
+			return true
+		}
+		if r < 32 && r != '\t' && r != '\n' && r != '\r' {
 			return true
 		}
 	}
-
-	// Check for Windows device names
-	windowsDevices := []string{"con", "prn", "aux", "nul", "com1", "lpt1"}
-	parts := strings.FieldsFunc(lower, func(c rune) bool {
-		return c == '/' || c == '\\' || c == ':' || c == '.'
-	})
-
-	for _, part := range parts {
-		for _, device := range windowsDevices {
-			if part == device {
-				return true
-			}
-		}
-	}
-
 	return false
 }
 

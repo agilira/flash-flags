@@ -9,7 +9,7 @@
 [![GoDoc](https://godoc.org/github.com/agilira/flash-flags?status.svg)](https://godoc.org/github.com/agilira/flash-flags)
 [![Mentioned in Awesome Go](https://awesome.re/mentioned-badge.svg)](https://github.com/avelino/awesome-go)
 
-FlashFlags is an ultra-fast, zero-dependency, lock-free command-line flag parsing library for Go. Originally built for [Argus](https://github.com/agilira/argus), it provides great performance while maintaining simplicity and ease of use. FlashFlags serves as the core parsing engine for our CLI framework [Orpheus](https://github.com/agilira/orpheus).
+FlashFlags is an ultra-fast, zero-dependency command-line flag parsing library for Go. Originally built for [Argus](https://github.com/agilira/argus), it provides great performance while maintaining simplicity and ease of use. FlashFlags serves as the core parsing engine for our CLI framework [Orpheus](https://github.com/agilira/orpheus).
 
 ## Live Demo
 
@@ -31,10 +31,10 @@ See Flash-Flags in action - POSIX-compliant stdlib replacement with JSON config 
 
 ## Features
 
-- **Security-Hardened**: Built-in protection against injection attacks, path traversal, and buffer overflows
+- **Input Screening**: Rejects malformed values (null bytes, control characters, absurd length)
 - **Ultra-Fast**: 85% of stdlib performance with comprehensive security validation
 - **Zero Dependencies**: Can be use as drop-in stdlib replacement with security
-- **Concurrent-Safe**: Safe for concurrent reads after Parse() -- no locks needed at runtime
+- **Concurrent Reads**: Safe for concurrent reads once Parse() has returned -- see [Thread Safety](#thread-safety)
 - **Configuration Files**: JSON config file support with auto-discovery
 - **Environment Variables**: Automatic environment variable integration
 - **Validation**: Built-in validation system with custom validators
@@ -44,22 +44,53 @@ See Flash-Flags in action - POSIX-compliant stdlib replacement with JSON config 
 - **POSIX/GNU Syntax**: Complete flag syntax support including combined short flags
 - **Flexible Parsing**: Support for `-f=value` and `-abc` combined syntax
 
-### Security Features
+### Input Screening
 
-Flash-flags provides comprehensive security hardening:
+Flag values are screened for input that is malformed as a string, whatever it is
+later used for:
 
-- **Command Injection Protection**: Blocks `$(...)`, backticks, and shell metacharacters
-- **Path Traversal Prevention**: Prevents `../` and `..\\` directory traversal attacks  
-- **Buffer Overflow Safeguards**: 10KB input limits with fast-path optimization
-- **Format String Attack Blocking**: Detects and blocks `%n`, `%s` format string exploits
-- **Input Sanitization**: Removes null bytes and dangerous control characters
-- **Windows Device Protection**: Blocks Windows reserved names (CON, PRN, AUX, etc.)
+- **Length**: values above 10000 bytes are rejected
+- **Null bytes**: `\x00` truncates the string in any C API it reaches
+- **Control characters**: C0 controls except `\t`, `\n`, `\r` — terminal escape
+  sequences, not data
+- **Fast path**: values under 100 bytes made only of `[A-Za-z0-9-_.:]` skip the
+  scan, because such a value cannot contain either
 
-**Security overhead**: Only 132ns per operation (17%) for complete protection
+It stops there, deliberately. A flag parser does not know whether a value will
+reach a shell, a SQL driver, an `fmt` verb or a file open, so it does not guess.
+Escaping belongs at the point of use: run `os/exec` without a shell, parameterize
+SQL, resolve and confine paths before opening them.
+
+> **Changed in v1.1.9.** The screening previously also rejected values containing
+> `/etc/`, `/proc/`, `/sys/`, `rm -rf`, `drop table`, `$(`, a backtick, the
+> `%n %s %x %d %c %p` format verbs, `../` and Windows device names. That denylist
+> stopped no attack — `a; rm -rf ~`, `deploy && restart` and `..%2f..%2fetc` all
+> passed it untouched — while rejecting ordinary input such as
+> `--config /etc/myapp.conf`. It has been removed. If you relied on it as a
+> security control, it was not one.
+
+**Overhead**: roughly 132ns per operation (17%).
+
+## Thread Safety
+
+FlashFlags holds no mutexes and performs no atomic operations, which is what keeps
+a read down to a plain map lookup. The guarantee follows from the absence of
+writes, not from synchronization:
+
+- **Writes** — flag registration, `Set*` configuration, `Parse`, `LoadConfig`,
+  `LoadEnvironmentVariables`, `Reset`, `ResetFlag` — must all happen on a single
+  goroutine, normally the one running `main`.
+- **Reads** — `Lookup`, `Value`, `Changed`, `Source`, the `Get*` accessors and the
+  pointers returned at declaration — are safe from any number of goroutines once
+  `Parse` has returned.
+
+Calling `Reset` while another goroutine reads is a data race and `go test -race`
+will report it. To re-parse at runtime, synchronize yourself or build a fresh
+`FlagSet` and swap it behind a pointer.
 
 ## Compatibility and Support
 
-FlashFlags is designed for Go 1.23+ environments and follows Long-Term Support guidelines to ensure consistent performance across production deployments.
+FlashFlags requires Go 1.25.9 or later.
 
 ## Performance
 
@@ -74,7 +105,7 @@ BenchmarkGoFlags-8           147,394   7460 ns/op    5620 B/op    61 allocs/op
 BenchmarkKingpin-8           150,154   7567 ns/op    6504 B/op    97 allocs/op  
 ```
 
-**Only 132ns overhead for complete protection against injection attacks**
+**Roughly 132ns overhead for input screening**
 
 **Reproduce benchmarks**:
 ```bash
@@ -233,6 +264,43 @@ FlashFlags applies configuration in this priority order (higher numbers override
 3. **Environment variables**
 4. **Command-line arguments** (highest priority)
 
+A higher-priority source always wins, whatever order the loaders run in: a value
+found in the config file does not suppress the matching environment variable.
+`fs.Source("port")` reports which layer supplied a value — `"cli"`, `"env"`,
+`"config"` or `"default"` — which is the quickest way to debug precedence.
+
+```go
+fs.Parse(os.Args[1:])
+fmt.Println(fs.GetInt("port"), "from", fs.Source("port")) // 3000 from env
+```
+
+Note that JSON has no duration type, so a duration flag in a config file accepts
+either the string form (`"30s"`, `"1m30s"`) or a plain number of nanoseconds.
+
+### Config file paths
+
+The path must point at a regular file; a directory, a FIFO or a device is
+refused. Nothing else about it is checked, because the path comes from your
+program rather than from parsed arguments — `LoadConfig` runs before argument
+parsing, so no `--config` value can reach it.
+
+Symlinks are followed, because that is usually what you want: a Kubernetes
+ConfigMap projects each key as a symlink, and dotfile managers link a config
+into place. If your program reads configuration from a directory other local
+users can write to, opt into refusing them:
+
+```go
+fs.SetConfigFile("/tmp/myapp.json")
+fs.EnableStrictConfigPaths() // refuse a symlinked final component
+```
+
+Only the final component is examined, so a symlinked parent directory is
+traversed normally — which is what keeps this usable on macOS, where `/tmp` is a
+symlink to `/private/tmp`. On Unix the file is opened with `O_NOFOLLOW`, so the
+kernel refuses the call and there is no window to race; on Windows the check
+runs before the open, because Go exposes no portable equivalent there, making it
+best-effort rather than a guarantee.
+
 ### Configuration File Example
 
 ```json
@@ -262,7 +330,10 @@ export DATABASE_URL=postgres://...
 ```go
 // Custom validation
 fs.SetValidator("port", func(val interface{}) error {
-    port := val.(int)
+    port, ok := val.(int)
+    if !ok {
+        return fmt.Errorf("expected int, got %T", val)
+    }
     if port < 1024 || port > 65535 {
         return fmt.Errorf("port must be between 1024 and 65535")
     }
@@ -275,6 +346,13 @@ fs.SetRequired("api-key")
 // Flag dependencies
 fs.SetDependencies("tls-cert", "enable-tls")
 ```
+
+A validator receives the value boxed in an `interface{}`. Always use the comma-ok
+form as shown above: a bare `val.(int)` panics on mismatch, and that panic
+propagates out of `Parse` and terminates the program. The dynamic type matches the
+flag's declared type — `int` for `Int`, `time.Duration` for `Duration`, `[]string`
+for `StringSlice` — so a failed assertion means the validator was attached to the
+wrong flag.
 
 ## Real-World Example
 
@@ -328,7 +406,10 @@ func main() {
     
     // Validation
     fs.SetValidator("port", func(val interface{}) error {
-        port := val.(int)
+        port, ok := val.(int)
+        if !ok {
+            return fmt.Errorf("expected int, got %T", val)
+        }
         if port < 1 || port > 65535 {
             return fmt.Errorf("port must be between 1 and 65535")
         }
@@ -336,7 +417,10 @@ func main() {
     })
     
     fs.SetValidator("log-level", func(val interface{}) error {
-        level := val.(string)
+        level, ok := val.(string)
+        if !ok {
+            return fmt.Errorf("expected string, got %T", val)
+        }
         validLevels := []string{"debug", "info", "warn", "error"}
         for _, valid := range validLevels {
             if level == valid {

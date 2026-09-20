@@ -1,6 +1,6 @@
 module github.com/agilira/flash-flags/stdlib
 
-go 1.23
+go 1.25.9
 
 require github.com/agilira/flash-flags v1.0.4
 

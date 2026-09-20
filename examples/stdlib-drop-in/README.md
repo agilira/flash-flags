@@ -20,7 +20,7 @@ That's it! Your existing code works exactly the same.
 
 ### 🚀 Performance
 - **1.5x faster** flag parsing
-- Zero-dependency, lock-free implementation
+- Zero-dependency implementation
 - Optimized memory allocation
 
 ### ✨ Enhanced Features
