@@ -55,7 +55,6 @@ demo-script.sh
 # Test artifacts
 testdata/output/
 *.prof
-testdata/
 
 # Local development
 .env
@@ -66,7 +65,6 @@ testdata/
 
 # Demo and recording files
 *.cast
-demo-script.sh
 RECORDING.md
 
 # Example binaries, built in place by `go build` inside examples/.
