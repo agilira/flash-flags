@@ -481,6 +481,19 @@ rate := fs.Float64("rate", 1.0, "Processing rate")
 // Usage: --rate 2.5 or --rate=3.14
 ```
 
+#### Float64Var
+```go
+func (fs *FlagSet) Float64Var(name, shortKey string, defaultValue float64, usage string) *float64
+```
+
+Defines a float64 flag with a short key. An empty `shortKey` registers the long form only, exactly as `Float64` does.
+
+**Example:**
+```go
+rate := fs.Float64Var("rate", "r", 1.0, "Processing rate")
+// Usage: --rate 2.5, --rate=3.14 or -r 2.5
+```
+
 ---
 
 ### Duration Flags
@@ -511,6 +524,19 @@ Defines a duration flag. Duration values are parsed using `time.ParseDuration` f
 ```go
 timeout := fs.Duration("timeout", 30*time.Second, "Request timeout duration")
 // Usage: --timeout 5m or --timeout=1h30s
+```
+
+#### DurationVar
+```go
+func (fs *FlagSet) DurationVar(name, shortKey string, defaultValue time.Duration, usage string) *time.Duration
+```
+
+Defines a duration flag with a short key. An empty `shortKey` registers the long form only, exactly as `Duration` does.
+
+**Example:**
+```go
+timeout := fs.DurationVar("timeout", "T", 30*time.Second, "Request timeout duration")
+// Usage: --timeout 5m, --timeout=1h30s or -T 5m
 ```
 
 ---
@@ -545,6 +571,19 @@ fs.Parse(os.Args[1:])
 for _, tag := range *tags {
     fmt.Printf("Tag: %s\n", tag)
 }
+```
+
+#### StringSliceVar
+```go
+func (fs *FlagSet) StringSliceVar(name, shortKey string, defaultValue []string, usage string) *[]string
+```
+
+Defines a string slice flag with a short key. An empty `shortKey` registers the long form only. As with `StringSlice`, the default is copied, so the caller's slice is never aliased.
+
+**Example:**
+```go
+tags := fs.StringSliceVar("tags", "t", []string{"default"}, "Service tags")
+// Usage: --tags web,api,production or -t web,api
 ```
 
 ---
@@ -595,7 +634,7 @@ Use [`Source`](#source-1) to find out which layer supplied a given value.
 - `-vdp 8080` (verbose + debug + port=8080)
 
 **Special:**
-- `--help`, `-h` (shows help and returns `"help requested"` error)
+- `--help`, `-h` (shows help and returns `"help requested"` error), unless the application registers a flag under that name or short key — `StringVar("host", "h", ...)` claims `-h` for itself, and `String("help", ...)` claims `--help`. The two spellings are judged independently.
 - `--` (end of flags marker)
 
 **Example:**
