@@ -118,6 +118,39 @@ CHANGED
 
 ADDED
 -----
+- FlagSet.EnableStrictConfigPaths() makes Parse refuse a configuration file
+  whose final path component is a symbolic link, for both an explicitly named
+  file and one found by auto-discovery. It is off by default.
+
+  It is opt-in because following a symlink is normally what a config file is
+  expected to do: a Kubernetes ConfigMap mount projects every key as a symlink
+  into a ..data directory, and dotfile managers such as GNU Stow and chezmoi
+  link a config into place from a repository. Refusing symlinks by default
+  would break both, on the platform where they are most common. Turn it on when
+  the program reads configuration from a directory other local users can write
+  to -- the classic /tmp symlink attack, which is the only case it is for.
+
+  Only the final component is examined, so a symlinked parent directory is
+  traversed normally. That is deliberate: /tmp on macOS is itself a symlink to
+  /private/tmp, and rejecting paths through it would make the setting unusable
+  there.
+
+  The guarantee differs by platform, and the documentation says so rather than
+  implying parity. On Unix the file is opened with O_NOFOLLOW, so the kernel
+  refuses the call: the check and the open are one operation and cannot be
+  raced. On Windows the final component is checked with Lstat before the open,
+  because Go exposes no portable O_NOFOLLOW there, so a replacement racing
+  between the two could still be followed; creating a symbolic link on Windows
+  requires SeCreateSymbolicLinkPrivilege or Developer Mode, which narrows the
+  exposure without closing it. The two implementations live in build-tagged
+  files rather than behind runtime.GOOS, because the Unix one needs syscall
+  constants that do not exist on Windows.
+
+  Reading a config file now goes through the opened handle -- open, verify the
+  handle is a regular file, then read -- instead of stat-then-ReadFile. Once
+  open, the descriptor refers to a fixed inode, so the type check answers for
+  what was actually opened.
+
 - Flag.Source() and FlagSet.Source(name) report which configuration layer
   supplied a flag's current value: "cli", "env", "config" or "default". Because
   sources are resolved by precedence, the result names the highest-priority

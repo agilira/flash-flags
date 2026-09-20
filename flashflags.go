@@ -30,7 +30,9 @@ package flashflags
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -321,6 +323,7 @@ type FlagSet struct {
 	configLoaded    bool     // Whether config has been loaded
 	envPrefix       string   // Prefix for environment variables (e.g., "MYAPP")
 	enableEnvLookup bool     // Whether to lookup environment variables
+	strictPaths     bool     // Whether to refuse a symlinked configuration file
 	args            []string // Remaining non-flag arguments after parsing
 }
 
@@ -2071,6 +2074,58 @@ func (fs *FlagSet) SetConfigFile(path string) {
 	fs.configFile = path
 }
 
+// errSymlinkRefused is returned by openConfigFile when strict config paths are
+// enabled and the final path component is a symbolic link. It is a sentinel so
+// that both platform implementations report the same thing; loadConfigFromFile
+// turns it into an error naming the path.
+var errSymlinkRefused = errors.New("configuration file is a symbolic link")
+
+// EnableStrictConfigPaths makes Parse refuse a configuration file whose final
+// path component is a symbolic link, for both an explicitly named file and one
+// found by auto-discovery. It is off by default.
+//
+// WHY it is opt-in: following a symlink is what a configuration file is usually
+// expected to do. A Kubernetes ConfigMap mount projects every key as a symlink
+// into a ..data directory, and dotfile managers such as GNU Stow and chezmoi
+// link a config into place from a repository. Refusing symlinks by default
+// would break both, on the platform where they are most common.
+//
+// Turn it on when the program reads configuration from a directory other local
+// users can write to, where an attacker can plant a link before startup and
+// have a privileged process read a file it chose. That is the classic /tmp
+// symlink attack, and it is the only case this setting is for.
+//
+// Only the final component is examined, so a symlinked parent directory is
+// traversed normally. That is deliberate: on macOS /tmp is itself a symlink to
+// /private/tmp, and rejecting paths through it would make the setting unusable
+// there.
+//
+// The strength of the guarantee differs by platform, and the difference matters
+// if you are relying on it:
+//
+//   - On Unix the file is opened with O_NOFOLLOW, so the kernel refuses the
+//     call. The check and the open are one operation and cannot be raced.
+//   - On Windows the final component is checked with Lstat before the open,
+//     because Go exposes no portable O_NOFOLLOW there. A replacement racing
+//     between the two could still be followed. Creating a symbolic link on
+//     Windows needs SeCreateSymbolicLinkPrivilege or Developer Mode, so the
+//     exposure is narrower, but this is best-effort rather than a guarantee.
+//
+// Example:
+//
+//	fs := flashflags.New("myapp")
+//	fs.SetConfigFile("/tmp/myapp.json")
+//	fs.EnableStrictConfigPaths()
+//
+//	if err := fs.Parse(os.Args[1:]); err != nil {
+//		// "config file /tmp/myapp.json is a symbolic link (strict config
+//		//  paths enabled)"
+//		log.Fatal(err)
+//	}
+func (fs *FlagSet) EnableStrictConfigPaths() {
+	fs.strictPaths = true
+}
+
 // AddConfigPath adds a directory to search for configuration files during auto-discovery.
 // Multiple paths can be added and will be searched in order during Parse().
 //
@@ -2261,10 +2316,15 @@ func (fs *FlagSet) findConfigFile() string {
 // the old allowlist permitted, since a FIFO under /tmp passed it. os.Stat
 // answers both questions without opening anything.
 //
-// This is a robustness check, not a security boundary. It is inherently racy
-// against a concurrent replacement of the path, and symlinks are followed. An
-// application that derives the config path from untrusted input must validate
-// and confine it before calling SetConfigFile.
+// This is a robustness check, not a security boundary. An application that
+// derives the config path from untrusted input must validate and confine it
+// before calling SetConfigFile.
+//
+// Symlinks are followed, because that is what a config file is usually expected
+// to do -- a Kubernetes ConfigMap key and a dotfile manager's link both rely on
+// it. A program reading configuration from a directory other local users can
+// write to should call EnableStrictConfigPaths, which refuses a symlinked final
+// component at the open itself.
 func (fs *FlagSet) loadConfigFromFile(path string) error {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -2274,7 +2334,24 @@ func (fs *FlagSet) loadConfigFromFile(path string) error {
 		return fmt.Errorf("config file %s is not a regular file", path)
 	}
 
-	data, err := os.ReadFile(path) // #nosec G304 -- application-supplied path, never parsed input; see the comment above
+	f, err := openConfigFile(path, fs.strictPaths)
+	if err != nil {
+		if errors.Is(err, errSymlinkRefused) {
+			return fmt.Errorf("config file %s is a symbolic link (strict config paths enabled)", path)
+		}
+		return fmt.Errorf("failed to read config file %s: %v", path, err)
+	}
+	defer func() { _ = f.Close() }()
+
+	// Re-check through the open handle: os.Stat above answered before the file
+	// was opened, and this one cannot be raced against a replacement.
+	if info, err := f.Stat(); err != nil {
+		return fmt.Errorf("failed to read config file %s: %v", path, err)
+	} else if !info.Mode().IsRegular() {
+		return fmt.Errorf("config file %s is not a regular file", path)
+	}
+
+	data, err := io.ReadAll(f)
 	if err != nil {
 		return fmt.Errorf("failed to read config file %s: %v", path, err)
 	}

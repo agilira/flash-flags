@@ -277,6 +277,30 @@ fmt.Println(fs.GetInt("port"), "from", fs.Source("port")) // 3000 from env
 Note that JSON has no duration type, so a duration flag in a config file accepts
 either the string form (`"30s"`, `"1m30s"`) or a plain number of nanoseconds.
 
+### Config file paths
+
+The path must point at a regular file; a directory, a FIFO or a device is
+refused. Nothing else about it is checked, because the path comes from your
+program rather than from parsed arguments — `LoadConfig` runs before argument
+parsing, so no `--config` value can reach it.
+
+Symlinks are followed, because that is usually what you want: a Kubernetes
+ConfigMap projects each key as a symlink, and dotfile managers link a config
+into place. If your program reads configuration from a directory other local
+users can write to, opt into refusing them:
+
+```go
+fs.SetConfigFile("/tmp/myapp.json")
+fs.EnableStrictConfigPaths() // refuse a symlinked final component
+```
+
+Only the final component is examined, so a symlinked parent directory is
+traversed normally — which is what keeps this usable on macOS, where `/tmp` is a
+symlink to `/private/tmp`. On Unix the file is opened with `O_NOFOLLOW`, so the
+kernel refuses the call and there is no window to race; on Windows the check
+runs before the open, because Go exposes no portable equivalent there, making it
+best-effort rather than a guarantee.
+
 ### Configuration File Example
 
 ```json

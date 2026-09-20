@@ -239,6 +239,14 @@
 // understood by time.ParseDuration ("30s", "1m30s") or a plain number of
 // nanoseconds.
 //
+// The config file must be a regular file; a directory, a FIFO or a device is
+// refused. Symlinks are followed, since a Kubernetes ConfigMap key and a
+// dotfile manager's link both depend on that. A program reading configuration
+// from a directory other local users can write to should call
+// EnableStrictConfigPaths, which refuses a symlinked final path component --
+// the classic /tmp symlink attack. It is opt-in precisely because refusing
+// symlinks by default would break the two layouts above.
+//
 //	fs := flashflags.New("myapp")
 //	fs.SetConfigFile("./config.json")
 //

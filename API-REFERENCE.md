@@ -727,7 +727,7 @@ fs.SetConfigFile("./config/myapp.json")
 
 > **Changed in v1.1.9.** A prefix allowlist (`/tmp/`, `/opt/`, `/etc/`, `/var/tmp/`, `/var/folders/`) previously rejected every other absolute path, including the user's own home directory — the location `AddConfigPath`'s example uses — and any path containing `..`, including a directory merely named `v1..2`. It has been removed. The regular-file check that replaced it closes a hang the allowlist permitted: a FIFO under `/tmp` passed validation, and reading one blocks `Parse` until a writer appears.
 
-This is a robustness check, not a security boundary: it races against a concurrent replacement of the path, and symlinks are followed. If your program derives the config path from untrusted input, validate and confine it before calling `SetConfigFile`.
+This is a robustness check, not a security boundary. If your program derives the config path from untrusted input, validate and confine it before calling `SetConfigFile`. Symlinks are followed; see [`EnableStrictConfigPaths`](#enablestrictconfigpaths) to refuse them.
 
 ---
 
@@ -766,6 +766,42 @@ if home, err := os.UserHomeDir(); err == nil {
 ```
 
 Added paths are searched in the order they were added, each probed for every candidate filename before moving on.
+
+---
+
+#### EnableStrictConfigPaths
+```go
+func (fs *FlagSet) EnableStrictConfigPaths()
+```
+
+Makes `Parse` refuse a configuration file whose final path component is a symbolic link, for both an explicitly named file and one found by auto-discovery. **Off by default.**
+
+**Why it is opt-in:** following a symlink is normally what a config file is expected to do. A Kubernetes ConfigMap mount projects every key as a symlink into a `..data` directory, and dotfile managers such as GNU Stow and chezmoi link a config into place from a repository. Refusing symlinks by default would break both, on the platform where they are most common.
+
+**When to turn it on:** when the program reads configuration from a directory other local users can write to, where an attacker can plant a link before startup and have a privileged process read a file of their choosing. That is the classic `/tmp` symlink attack, and it is the only case this setting is for.
+
+**Scope:** only the final path component is examined. A symlinked parent directory is traversed normally — deliberately, since `/tmp` on macOS is itself a symlink to `/private/tmp`.
+
+**Guarantee by platform:**
+
+| Platform | Mechanism | Strength |
+|----------|-----------|----------|
+| Unix | `O_NOFOLLOW` at open | The kernel refuses the call; check and open are one operation and cannot be raced |
+| Windows | `Lstat` before open | Best-effort: Go exposes no portable `O_NOFOLLOW`, so a replacement racing between the two could be followed. Creating a symlink on Windows needs `SeCreateSymbolicLinkPrivilege` or Developer Mode |
+
+**Example:**
+```go
+fs := flashflags.New("myapp")
+fs.SetConfigFile("/tmp/myapp.json")
+fs.EnableStrictConfigPaths()
+
+if err := fs.Parse(os.Args[1:]); err != nil {
+    // "config file /tmp/myapp.json is a symbolic link (strict config paths enabled)"
+    log.Fatal(err)
+}
+```
+
+*Added in v1.1.9.*
 
 ---
 
