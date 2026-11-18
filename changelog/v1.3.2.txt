@@ -1,0 +1,21 @@
+Flash-Flags v1.3.2 - A Lone "-" Is an Operand
+=============================================
+
+Release Date: 2026-11-18
+Type: Fix
+
+FIXED
+-----
+- A lone "-" on the command line is now kept in Args(), as POSIX tools
+  expect: "cat -", "prog add job -" (read standard input).
+
+  Parse took every argument starting with '-' for a flag. "-" is neither
+  a short nor a long flag, so processArgument consumed nothing and the
+  argument vanished: it reached neither a flag nor Args(). Found through
+  a CLI whose "schedule add NAME -" was meant to read the prompt from
+  standard input and received no prompt at all.
+
+  A value flag still takes "-" as its value: --file - sets file to "-".
+
+- configpath_test.go: the deferred RemoveAll's error is now handled, so
+  errcheck passes.

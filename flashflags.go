@@ -737,8 +737,13 @@ func (fs *FlagSet) parseArguments(args []string) error {
 			return nil
 		}
 
-		// Check if this is a flag (starts with -)
-		if !strings.HasPrefix(arg, "-") {
+		// Check if this is a flag (starts with -). A lone "-" is not: by
+		// POSIX convention it is an operand, usually meaning standard input.
+		//
+		// WHY: it starts with '-' but is neither a short nor a long flag, so
+		// processArgument consumed nothing and it vanished silently from
+		// both the flags and Args().
+		if !strings.HasPrefix(arg, "-") || arg == "-" {
 			// Non-flag argument - collect it
 			fs.args = append(fs.args, arg)
 			continue
