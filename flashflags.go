@@ -326,6 +326,9 @@ type FlagSet struct {
 	enableEnvLookup bool     // Whether to lookup environment variables
 	strictPaths     bool     // Whether to refuse a symlinked configuration file
 	args            []string // Remaining non-flag arguments after parsing
+	// repeated holds the slice flags already given in the current Parse, so
+	// a repetition appends while a new Parse starts over.
+	repeated map[string]bool
 }
 
 // New creates a new FlagSet with the specified name.
@@ -720,6 +723,7 @@ func (fs *FlagSet) Parse(args []string) error {
 func (fs *FlagSet) parseArguments(args []string) error {
 	// Reset args slice for new parsing
 	fs.args = nil
+	fs.repeated = map[string]bool{}
 
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -1053,6 +1057,15 @@ func (fs *FlagSet) setFloat64Value(flag *Flag, value, name string) error {
 
 func (fs *FlagSet) setStringSliceValue(flag *Flag, value string) error {
 	slice := fs.parseStringSlice(value)
+	// WHY: a slice flag repeated on the command line accumulates
+	// (--tag a --tag b means [a b]), as the NOTE on splitByComma promises.
+	// Only a repetition within the command line appends: a value from the
+	// command line still replaces one from the default, env or config.
+	if fs.repeated[flag.name] {
+		if current, ok := flag.value.([]string); ok {
+			slice = append(append([]string(nil), current...), slice...)
+		}
+	}
 
 	// WHY no per-element screening here: the caller screened the whole value
 	// before it was split, and input hygiene is a per-character property, so no
@@ -1067,6 +1080,9 @@ func (fs *FlagSet) setStringSliceValue(flag *Flag, value string) error {
 
 	flag.value = slice
 	fs.updateStringSlicePointer(flag, slice)
+	if fs.repeated != nil {
+		fs.repeated[flag.name] = true
+	}
 	return nil
 }
 

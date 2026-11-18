@@ -1,0 +1,24 @@
+Flash-Flags v1.3.1 - Repeated Slice Flags Accumulate
+====================================================
+
+Release Date: 2026-11-18
+Type: Fix
+
+FIXED
+-----
+- A string slice flag given more than once on the command line now keeps
+  every value: --mount a --mount b means [a b].
+
+  setStringSliceValue replaced the slice on every occurrence, so only the
+  last one survived. The NOTE on splitByComma tells callers to pass values
+  containing commas "as separate --flag invocations", which was exactly the
+  case that lost data. Found through a CLI granting two directories with
+  --mount: the first grant silently disappeared.
+
+  Repetitions accumulate only within one Parse. A value from the command
+  line still replaces the default, an environment variable or the config
+  file, and a new Parse, with or without Reset, starts over.
+
+  WHY per Parse rather than per source: a FlagSet parsed twice (tests, REPL
+  style tools) must not carry values from the previous command line into
+  the next one.
