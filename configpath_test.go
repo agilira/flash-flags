@@ -47,7 +47,7 @@ func TestConfigPath_AcceptsOrdinaryLocations(t *testing.T) {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				t.Fatalf("mkdir: %v", err)
 			}
-			defer os.RemoveAll(dir)
+			defer func() { _ = os.RemoveAll(dir) }()
 			path := filepath.Join(dir, "app.json")
 			if err := os.WriteFile(path, []byte(`{"host":"loaded"}`), 0o600); err != nil {
 				t.Fatalf("write: %v", err)
