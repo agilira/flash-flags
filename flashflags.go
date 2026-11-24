@@ -75,9 +75,13 @@ type FlagSet struct {
 	enableEnvLookup bool     // Whether to lookup environment variables
 	strictPaths     bool     // Whether to refuse a symlinked configuration file
 	args            []string // Remaining non-flag arguments after parsing
-	// repeated holds the slice flags already given in the current Parse, so
-	// a repetition appends while a new Parse starts over.
-	repeated map[string]bool
+	// parseGen numbers the command lines parsed; Flag.givenIn records the
+	// one that last set a flag, so a repetition within one command line
+	// appends while a new Parse starts over.
+	//
+	// WHY a counter and not a set of names: the set was a new map on every
+	// Parse, an allocation each command line paid even with no slice flag.
+	parseGen uint64
 }
 
 // New creates a new FlagSet with the specified name.

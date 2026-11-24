@@ -90,15 +90,16 @@ FlashFlags requires Go 1.25.9 or later.
 FlashFlags delivers exceptional performance with security-hardened parsing:
 
 ```
-AMD Ryzen 5 7520U 
-BenchmarkFlashFlags-8      1,294,699    924 ns/op     945 B/op    11 allocs/op
-BenchmarkStdFlag-8         1,527,176    792 ns/op     945 B/op    13 allocs/op  
-BenchmarkPflag-8             785,904   1322 ns/op    1569 B/op    21 allocs/op  
-BenchmarkGoFlags-8           147,394   7460 ns/op    5620 B/op    61 allocs/op  
-BenchmarkKingpin-8           150,154   7567 ns/op    6504 B/op    97 allocs/op  
+AMD Ryzen 5 7520U
+BenchmarkFlashFlags-8      1,000,000   1556 ns/op    1057 B/op    12 allocs/op
+BenchmarkStdFlag-8           899,070   1634 ns/op     945 B/op    13 allocs/op
+BenchmarkPflag-8             827,306   2670 ns/op    1569 B/op    21 allocs/op
+BenchmarkGoFlags-8            72,787  15378 ns/op    5620 B/op    61 allocs/op
+BenchmarkKingpin-8           145,906  15412 ns/op    6504 B/op    97 allocs/op
 ```
 
-**Roughly 132ns overhead for input screening**
+Input screening included, FlashFlags parses on par with the standard library,
+with fewer allocations.
 
 **Reproduce benchmarks**:
 ```bash

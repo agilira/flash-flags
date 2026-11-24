@@ -76,7 +76,7 @@ func (fs *FlagSet) Parse(args []string) error {
 func (fs *FlagSet) parseArguments(args []string) error {
 	// Reset args slice for new parsing
 	fs.args = nil
-	fs.repeated = map[string]bool{}
+	fs.parseGen++
 
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -460,7 +460,7 @@ func (fs *FlagSet) setFlagValueFrom(name, value string, src flagSource) error {
 		}
 	}
 
-	if err := fs.setFlagValueByType(flag, value); err != nil {
+	if err := fs.setFlagValueByType(flag, value, src); err != nil {
 		return err
 	}
 
@@ -468,18 +468,19 @@ func (fs *FlagSet) setFlagValueFrom(name, value string, src flagSource) error {
 	return fs.validateFlag(flag, name)
 }
 
-// setFlagValueByType parses value with the flag's kind and stores it. For an
-// accumulating kind it also records that the flag was given in this Parse, so
-// the next occurrence appends.
-func (fs *FlagSet) setFlagValueByType(flag *Flag, value string) error {
-	again := flag.kind.accumulates && fs.repeated[flag.name]
+// setFlagValueByType parses value with the flag's kind and stores it. A value
+// from the command line records the command line that gave it, so that a
+// second occurrence of an accumulating flag in it appends.
+func (fs *FlagSet) setFlagValueByType(flag *Flag, value string, src flagSource) error {
+	fromCLI := src == sourceCLI
+	again := fromCLI && flag.kind.accumulates && flag.givenIn == fs.parseGen
 	v, err := flag.kind.parse(flag, value, again)
 	if err != nil {
 		return err
 	}
 	flag.set(v)
-	if flag.kind.accumulates && fs.repeated != nil {
-		fs.repeated[flag.name] = true
+	if fromCLI {
+		flag.givenIn = fs.parseGen
 	}
 	return nil
 }

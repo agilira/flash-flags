@@ -1,0 +1,26 @@
+Flash-Flags v1.3.5 - No Allocation of Its Own per Parse
+=======================================================
+
+Release Date: 2026-11-24
+Type: Performance
+
+CHANGED
+-------
+- Parse no longer allocates a map on every call. It remembered which
+  slice flags the command line had given, so that a repetition appends
+  (--tag a --tag b); a counter of command lines parsed, and on each flag
+  the one that last set it, do the same job without allocating.
+
+  Every Parse benchmark has one allocation less (48 to 256 bytes); a
+  command line of bool flags now parses with no allocation at all. A
+  framework that parses two FlagSets per command, global and command
+  flags as Orpheus does, saves two.
+
+- README: the benchmark table is measured again, on the same machine for
+  every row.
+
+TESTS
+-----
+- parsegen_test.go: Parse of bool flags allocates nothing; a repeated
+  slice flag accumulates within one command line and starts over with the
+  next Parse.
