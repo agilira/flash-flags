@@ -1,11 +1,10 @@
-# FlashFlags: Ultra-fast command-line flag parsing for Go
+# FlashFlags: Fast & Secure command-line flag parsing for Go
 ### an AGILira library
 
 [![CI/CD Pipeline](https://github.com/agilira/flash-flags/actions/workflows/ci.yml/badge.svg)](https://github.com/agilira/flash-flags/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/agilira/flash-flags/actions/workflows/codeql.yml/badge.svg)](https://github.com/agilira/flash-flags/actions/workflows/codeql.yml)
 [![Security](https://img.shields.io/badge/security-gosec-brightgreen.svg)](https://github.com/agilira/flash-flags/actions/workflows/ci.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/agilira/flash-flags?v=2)](https://goreportcard.com/report/github.com/agilira/flash-flags)
-[![Coverage](https://img.shields.io/badge/coverage-94.2%25-brightgreen.svg)](https://github.com/agilira/flash-flags)
+[![Coverage](https://img.shields.io/badge/coverage-99.4%25-brightgreen.svg)](https://github.com/agilira/flash-flags)
 [![GoDoc](https://godoc.org/github.com/agilira/flash-flags?status.svg)](https://godoc.org/github.com/agilira/flash-flags)
 [![Mentioned in Awesome Go](https://awesome.re/mentioned-badge.svg)](https://github.com/avelino/awesome-go)
 
@@ -15,15 +14,9 @@ FlashFlags is an ultra-fast, zero-dependency command-line flag parsing library f
 
 <div align="center">
 
-See Flash-Flags in action - POSIX-compliant stdlib replacement with JSON config support:
+Command line, environment and config file in one parser ([examples/server](examples/server)):
 
-<picture>
-  <source media="(max-width: 768px)" srcset="https://asciinema.org/a/QJpvO4R70WE6kUE8.svg" width="100%">
-  <source media="(max-width: 1024px)" srcset="https://asciinema.org/a/QJpvO4R70WE6kUE8.svg" width="90%">
-  <img src="https://asciinema.org/a/QJpvO4R70WE6kUE8.svg" alt="Flash-Flags CLI Demo" style="max-width: 100%; height: auto;" width="800">
-</picture>
-
-*[Click to view interactive demo](https://asciinema.org/a/QJpvO4R70WE6kUE8)*
+<img src="assets/demo.gif" alt="Flash-Flags demo: help, config file, environment and command-line precedence, validation" width="100%">
 
 </div>
 

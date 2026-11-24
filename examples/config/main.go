@@ -19,14 +19,14 @@ func main() {
 
 	// Create a sample config file
 	configContent := `{
-		"host": "config.example.com",
-		"port": 9090,
-		"ssl": true,
-		"workers": 4,
-		"log-level": "debug",
-		"timeout": 30.5,
-		"features": ["auth", "metrics", "cache"]
-	}`
+  "host": "config.example.com",
+  "port": 9090,
+  "ssl": true,
+  "workers": 4,
+  "log-level": "debug",
+  "timeout": 30.5,
+  "features": ["auth", "metrics", "cache"]
+}`
 
 	configFile := "demo-config.json"
 	if err := os.WriteFile(configFile, []byte(configContent), 0600); err != nil { // More restrictive permissions
@@ -100,8 +100,9 @@ func main() {
 	fmt.Println("----------------------------------------")
 	fmt.Println("Value priority order (highest to lowest):")
 	fmt.Println("1. Command line arguments")
-	fmt.Println("2. Configuration file")
-	fmt.Println("3. Default values")
+	fmt.Println("2. Environment variables")
+	fmt.Println("3. Configuration file")
+	fmt.Println("4. Default values")
 	fmt.Println("")
 	fmt.Println("In this demo:")
 	fmt.Println("- host, port, workers came from command line (highest priority)")
@@ -113,7 +114,7 @@ func main() {
 	fmt.Println("The library searches for config files in this order:")
 	fmt.Println("- Explicit file set with SetConfigFile()")
 	fmt.Println("- Auto-discovery: {appname}.json, {appname}.config.json, config.json")
-	fmt.Println("- Search paths: current dir, ./config, $HOME (or custom paths)")
+	fmt.Println("  in each directory added with AddConfigPath()")
 
 	fmt.Println("\n=== Demo Complete ===")
 }

@@ -134,7 +134,8 @@ func (fs *FlagSet) SetDependencies(name string, dependencies ...string) error {
 //
 // The method stops at the first validation failure and returns that error.
 func (fs *FlagSet) ValidateAll() error {
-	for name, flag := range fs.flags {
+	for _, flag := range fs.order {
+		name := flag.name
 		if flag.validator != nil {
 			if err := flag.Validate(); err != nil {
 				return fmt.Errorf("validation failed for flag --%s: %v", name, err)
@@ -160,7 +161,8 @@ func (fs *FlagSet) ValidateAll() error {
 //
 // Required flags can be satisfied by any configuration source (CLI, env, config file).
 func (fs *FlagSet) ValidateRequired() error {
-	for name, flag := range fs.flags {
+	for _, flag := range fs.order {
+		name := flag.name
 		if flag.required && flag.source == sourceDefault {
 			return fmt.Errorf("required flag --%s not provided", name)
 		}
@@ -185,7 +187,8 @@ func (fs *FlagSet) ValidateRequired() error {
 //
 // Dependencies must be satisfied by any configuration source.
 func (fs *FlagSet) ValidateDependencies() error {
-	for name, flag := range fs.flags {
+	for _, flag := range fs.order {
+		name := flag.name
 		if flag.source != sourceDefault && len(flag.dependencies) > 0 {
 			for _, dep := range flag.dependencies {
 				depFlag := fs.Lookup(dep)

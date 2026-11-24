@@ -63,6 +63,7 @@ import (
 // concurrency.
 type FlagSet struct {
 	flags           map[string]*Flag // Long flag name -> Flag
+	order           []*Flag          // Flags in declaration order, for stable iteration
 	shortMap        map[string]*Flag // Short flag key -> Flag
 	name            string
 	description     string   // Program description for help
@@ -98,6 +99,7 @@ func New(name string) *FlagSet {
 	return &FlagSet{
 		flags:    make(map[string]*Flag),
 		shortMap: make(map[string]*Flag),
+		order:    make([]*Flag, 0, 8), // one allocation covers a typical program
 		name:     name,
 	}
 }
@@ -117,10 +119,28 @@ func (fs *FlagSet) define(name, shortKey, usage string, kind *flagKind, value, d
 		usage:        usage,
 		shortKey:     shortKey,
 	}
+	fs.remember(flag)
 	fs.flags[name] = flag
 	if shortKey != "" {
 		fs.shortMap[shortKey] = flag
 	}
+}
+
+// remember records flag in declaration order. A redeclared name keeps the
+// position of its first declaration and takes the new definition.
+//
+// WHY an ordered list next to the map: iterating the map made help output,
+// VisitAll and the first reported validation error change from run to run.
+func (fs *FlagSet) remember(flag *Flag) {
+	if old, exists := fs.flags[flag.name]; exists {
+		for i, f := range fs.order {
+			if f == old {
+				fs.order[i] = flag
+				return
+			}
+		}
+	}
+	fs.order = append(fs.order, flag)
 }
 
 // String defines a string flag with the specified name, default value, and usage string.
@@ -315,7 +335,7 @@ func (fs *FlagSet) StringSliceVar(name, shortKey string, defaultValue []string, 
 
 // VisitAll calls fn for each flag in the set.
 // This is useful for iterating over all flags, for example to generate help text or validate all flags.
-// The order of iteration is not guaranteed.
+// Flags are visited in declaration order.
 //
 // Example:
 //
@@ -323,7 +343,7 @@ func (fs *FlagSet) StringSliceVar(name, shortKey string, defaultValue []string, 
 //		fmt.Printf("Flag: %s = %v (type: %s)\n", flag.Name(), flag.Value(), flag.Type())
 //	})
 func (fs *FlagSet) VisitAll(fn func(*Flag)) {
-	for _, flag := range fs.flags {
+	for _, flag := range fs.order {
 		fn(flag)
 	}
 }
@@ -397,10 +417,17 @@ func (fs *FlagSet) Source(name string) string {
 //	fmt.Println(fs.Changed("port")) // false
 //
 // After Reset(), all flags return to their initial state as if Parse() was never called.
+//
+// WHY it clears configLoaded and the operands: LoadConfig runs once per
+// load, so a Reset that left the file marked as loaded made the next Parse
+// skip it, and every flag the command line did not set fell back to its
+// default instead of the config value.
 func (fs *FlagSet) Reset() {
-	for _, flag := range fs.flags {
+	for _, flag := range fs.order {
 		flag.Reset()
 	}
+	fs.configLoaded = false
+	fs.args = nil
 }
 
 // ResetFlag resets a specific flag to its default value and marks it as unchanged.

@@ -106,7 +106,8 @@ func (fs *FlagSet) LoadEnvironmentVariables() error {
 		return nil
 	}
 
-	for name, flag := range fs.flags {
+	for _, flag := range fs.order {
+		name := flag.name
 		// setFlagValueFrom enforces this too; skipping early avoids the env
 		// lookup for a value that would be discarded anyway. A value from the
 		// config file ranks lower and is overridden here.
