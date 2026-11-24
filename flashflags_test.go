@@ -2322,53 +2322,35 @@ func TestResetStringSlicePointer(t *testing.T) {
 	})
 }
 
-// Test parseStringSlice edge cases
+// Test splitStringSlice edge cases
 func TestParseStringSliceEdgeCases(t *testing.T) {
-	fs := New("test")
 
 	t.Run("empty string", func(t *testing.T) {
-		result := fs.parseStringSlice("")
+		result := splitStringSlice("")
 		if len(result) != 0 {
 			t.Errorf("Expected empty slice, got %v", result)
 		}
 	})
 
 	t.Run("string with trailing comma", func(t *testing.T) {
-		result := fs.parseStringSlice("a,b,")
+		result := splitStringSlice("a,b,")
 		if len(result) != 2 || result[0] != "a" || result[1] != "b" {
 			t.Errorf("Expected [a b], got %v", result)
 		}
 	})
 
 	t.Run("string with leading comma", func(t *testing.T) {
-		result := fs.parseStringSlice(",a,b")
+		result := splitStringSlice(",a,b")
 		if len(result) != 2 || result[0] != "a" || result[1] != "b" {
 			t.Errorf("Expected [a b], got %v", result)
 		}
 	})
 
 	t.Run("consecutive commas", func(t *testing.T) {
-		result := fs.parseStringSlice("a,,b")
+		result := splitStringSlice("a,,b")
 		if len(result) != 2 || result[0] != "a" || result[1] != "b" {
 			t.Errorf("Expected [a b], got %v", result)
 		}
-	})
-}
-
-// Test resetPointer edge cases
-func TestResetPointerEdgeCases(t *testing.T) {
-	t.Run("reset unsupported type pointer", func(t *testing.T) {
-		// Create a flag with an unsupported type
-		flag := &Flag{
-			name:         "test",
-			defaultValue: complex64(1 + 2i), // Unsupported type
-			ptr:          nil,
-			flagType:     "complex64",
-		}
-
-		// Should not crash when resetting unsupported type
-		flag.Reset()
-		// Test passes if no panic occurs
 	})
 }
 

@@ -7,7 +7,7 @@
 // - Parse: Complete argument parsing pipeline with all flag types
 // - parseArguments: Core argument processing logic
 // - setFlagValue: Value setting and type conversion
-// - parseStringSlice: CSV parsing for string slices
+// - splitStringSlice: CSV parsing for string slices
 // - LoadConfig: JSON configuration file loading
 // - LoadEnvironmentVariables: Environment variable processing
 //
@@ -28,6 +28,7 @@
 package flashflags
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -110,11 +111,18 @@ func FuzzParse(f *testing.F) {
 		tags := fs.StringSlice("tags", []string{}, "Service tags")
 		config := fs.String("config", "", "Config file path")
 
-		// Add validator to test validation fuzzing
+		// The validator rejects an out-of-range port, so the range check on a
+		// successful Parse below proves the validator ran on every syntax that
+		// can set the flag (--port, --port=, -p, -p=, combined -dp).
+		//
+		// WHY it rejects: it used to return nil either way, which left the
+		// range check asserting something the library never promises -- any
+		// int is a valid int flag -- and the fuzzer found it with
+		// "-p=0000000000001000000".
 		_ = fs.SetValidator("port", func(val interface{}) error {
-			p := val.(int)
-			if p < 0 || p > 65535 {
-				return nil // Return nil to avoid expected validation failures in fuzzing
+			p, ok := val.(int)
+			if !ok || p < 0 || p > 65535 {
+				return fmt.Errorf("port out of range: %v", val)
 			}
 			return nil
 		})
@@ -179,7 +187,7 @@ func FuzzParse(f *testing.F) {
 	})
 }
 
-// FuzzParseStringSlice tests the parseStringSlice function for CSV parsing vulnerabilities.
+// FuzzParseStringSlice tests the splitStringSlice function for CSV parsing vulnerabilities.
 //
 // This function handles comma-separated values and could be vulnerable to DoS attacks.
 func FuzzParseStringSlice(f *testing.F) {

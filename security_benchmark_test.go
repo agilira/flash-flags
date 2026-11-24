@@ -5,14 +5,14 @@
 //
 // BENCHMARKED FUNCTIONS:
 // - Parse with various input sizes and complexity
-// - parseStringSlice with different CSV inputs
+// - splitStringSlice with different CSV inputs
 // - LoadConfig with JSON parsing
 // - LoadEnvironmentVariables with various env sizes
 // - Validation functions with security checks
 //
 // PERFORMANCE TARGETS:
 // - Parse: < 10μs for typical arguments (< 20 flags)
-// - parseStringSlice: < 1μs for typical CSV (< 100 items)
+// - splitStringSlice: < 1μs for typical CSV (< 100 items)
 // - LoadConfig: < 1ms for typical JSON (< 10KB)
 // - Validation: < 100ns per flag
 //
@@ -180,21 +180,19 @@ func BenchmarkParse_ComplexCombined(b *testing.B) {
 
 // BenchmarkParseStringSlice_Small benchmarks small CSV parsing
 func BenchmarkParseStringSlice_Small(b *testing.B) {
-	fs := &FlagSet{}
 	csvValue := "web,api,database,cache,monitoring"
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		result := fs.parseStringSlice(csvValue)
+		result := splitStringSlice(csvValue)
 		_ = result // Prevent optimization
 	}
 }
 
 // BenchmarkParseStringSlice_Medium benchmarks medium CSV parsing
 func BenchmarkParseStringSlice_Medium(b *testing.B) {
-	fs := &FlagSet{}
 	// Generate 100 items
 	items := make([]string, 100)
 	for i := range items {
@@ -206,14 +204,13 @@ func BenchmarkParseStringSlice_Medium(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		result := fs.parseStringSlice(csvValue)
+		result := splitStringSlice(csvValue)
 		_ = result
 	}
 }
 
 // BenchmarkParseStringSlice_Large benchmarks large CSV parsing (stress test)
 func BenchmarkParseStringSlice_Large(b *testing.B) {
-	fs := &FlagSet{}
 	// Generate 10,000 items
 	items := make([]string, 10000)
 	for i := range items {
@@ -225,14 +222,13 @@ func BenchmarkParseStringSlice_Large(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		result := fs.parseStringSlice(csvValue)
+		result := splitStringSlice(csvValue)
 		_ = result
 	}
 }
 
 // BenchmarkParseStringSlice_EmptyAndEdges benchmarks edge cases
 func BenchmarkParseStringSlice_EmptyAndEdges(b *testing.B) {
-	fs := &FlagSet{}
 	testCases := []string{
 		"",     // Empty
 		",",    // Single comma
@@ -246,7 +242,7 @@ func BenchmarkParseStringSlice_EmptyAndEdges(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		csvValue := testCases[i%len(testCases)]
-		result := fs.parseStringSlice(csvValue)
+		result := splitStringSlice(csvValue)
 		_ = result
 	}
 }

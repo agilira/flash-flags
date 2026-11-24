@@ -1,0 +1,39 @@
+Flash-Flags v1.3.3 - One Place Per Type
+=======================================
+
+Release Date: 2026-11-24
+Type: Refactor
+
+CHANGED
+-------
+- Each flag type is now defined in one place. kind.go holds one flagKind
+  per type (string, int, bool, float64, duration, stringSlice) with its
+  name, its command-line parser, its config file conversion and the
+  write into the declared pointer.
+
+  The type used to be a string switched on in four places: the
+  command-line setter, the config setter, the pointer reset and the
+  pointer update. A fix applied to one switch and not the others was one
+  edit away, and a new type meant touching all four. The twelve per-type
+  setters and the seven reset helpers are gone, and the nine declaration
+  functions share a single FlagSet.define.
+
+- flashflags.go is split by concern: flag.go, parse.go, config.go,
+  env.go, help.go and validate.go. The move changes no code.
+
+No public API change and no behaviour change: errors, precedence and
+help output are the same. Allocations and bytes per operation match
+v1.3.2 on every benchmark.
+
+TESTS
+-----
+- FuzzParse: the port validator now rejects an out-of-range value. It
+  returned nil either way, so the range check on a successful Parse
+  asserted something the library never promises (any int is a valid int
+  flag), and the fuzzer failed on "-p=0000000000001000000". The check now
+  proves the validator runs on every syntax that sets the flag. The input
+  is kept as a corpus entry.
+- TestResetPointerEdgeCases is removed: it built a flag of type
+  "complex64", a state that can no longer exist.
+- Coverage rises from 89.7% to 96.7%, since the defensive branches for
+  unknown types are gone.
