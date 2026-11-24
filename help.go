@@ -36,7 +36,8 @@ import (
 // Use PrintHelp() for complete help with grouping, defaults, and requirements.
 func (fs *FlagSet) PrintUsage() {
 	fmt.Printf("Usage of %s:\n", fs.name)
-	for name, flag := range fs.flags {
+	for _, flag := range fs.order {
+		name := flag.name
 		fmt.Printf("  --%s", name)
 		if flag.shortKey != "" {
 			fmt.Printf(", -%s", flag.shortKey)
@@ -165,10 +166,14 @@ func (fs *FlagSet) Help() string {
 
 	// Group flags by group name
 	groups := make(map[string][]*Flag)
+	var groupOrder []string
 	ungrouped := []*Flag{}
 
-	for _, flag := range fs.flags {
+	for _, flag := range fs.order {
 		if flag.group != "" {
+			if _, seen := groups[flag.group]; !seen {
+				groupOrder = append(groupOrder, flag.group)
+			}
 			groups[flag.group] = append(groups[flag.group], flag)
 		} else {
 			ungrouped = append(ungrouped, flag)
@@ -185,10 +190,10 @@ func (fs *FlagSet) Help() string {
 	}
 
 	// Display grouped flags
-	for groupName, groupFlags := range groups {
+	for _, groupName := range groupOrder {
 		help.WriteString(groupName)
 		help.WriteString(":\n")
-		for _, flag := range groupFlags {
+		for _, flag := range groups[groupName] {
 			help.WriteString(fs.formatFlagHelp(flag))
 		}
 		help.WriteString("\n")

@@ -128,11 +128,10 @@ func (fs *FlagSet) processArgument(args []string, i int) (int, error) {
 		return fs.parseShortFlag(args, i)
 	}
 
-	if fs.isLongFlag(arg) {
-		return fs.parseLongFlag(args, i)
-	}
-
-	return 0, nil
+	// WHY no third case: parseArguments sends here only an argument that
+	// starts with '-' and is not a lone "-", so one that is not short starts
+	// with "--". The old fallback returned success for it and was unreachable.
+	return fs.parseLongFlag(args, i)
 }
 
 // isHelpFlag reports whether the argument should be handled as the built-in
@@ -164,11 +163,6 @@ func (fs *FlagSet) isHelpFlag(arg string) bool {
 // isShortFlag checks if the argument is a short flag (includes -f, -f=value, -abc)
 func (fs *FlagSet) isShortFlag(arg string) bool {
 	return len(arg) >= 2 && arg[0] == '-' && arg[1] != '-'
-}
-
-// isLongFlag checks if the argument is a long flag
-func (fs *FlagSet) isLongFlag(arg string) bool {
-	return strings.HasPrefix(arg, "--")
 }
 
 // parseShortFlag handles short flag parsing (-p, -d, -p=value, -abc)
@@ -234,18 +228,8 @@ func (fs *FlagSet) parseShortFlagWithEquals(arg string, eqPos int) (int, error) 
 		return 0, fmt.Errorf("unknown flag: -%s", shortKey)
 	}
 
-	// For boolean flags, -f=true or -f=false
-	if flag.kind == boolKind {
-		err := fs.setFlagValue(flag.name, flagValue)
-		if err != nil {
-			return 0, err
-		}
-		return 0, nil
-	}
-
-	// For non-boolean flags, -f=value
-	err := fs.setFlagValue(flag.name, flagValue)
-	if err != nil {
+	// -f=value, and -f=true or -f=false for a boolean: the kind parses it.
+	if err := fs.setFlagValue(flag.name, flagValue); err != nil {
 		return 0, err
 	}
 	return 0, nil
