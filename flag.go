@@ -6,10 +6,6 @@
 
 package flashflags
 
-import (
-	"time"
-)
-
 // Flag represents a single command-line flag with its value, metadata, and constraints.
 // It implements ultra-fast flag handling using only the standard library.
 // Safe for concurrent reads after Parse() completes.
@@ -31,8 +27,8 @@ type Flag struct {
 	value        interface{}
 	defaultValue interface{} // original default value for reset
 	ptr          interface{} // pointer to the actual value
-	flagType     string
-	source       flagSource // highest-priority source that supplied the current value
+	kind         *flagKind   // per-type parsing, conversion and storage
+	source       flagSource  // highest-priority source that supplied the current value
 	usage        string
 	shortKey     string                  // Short flag key (e.g., "p" for port)
 	validator    func(interface{}) error // Optional validation function
@@ -74,7 +70,7 @@ func (f *Flag) Value() interface{} { return f.value }
 //		dur := flag.Value().(time.Duration)
 //		fmt.Printf("Timeout: %v\n", dur)
 //	}
-func (f *Flag) Type() string { return f.flagType }
+func (f *Flag) Type() string { return f.kind.name }
 
 // Changed returns whether the flag was explicitly set by any configuration source.
 // Returns true if the flag was set via command line, environment variable, or config file.
@@ -177,80 +173,12 @@ func (f *Flag) Validate() error {
 //	fmt.Printf("Port reset to: %v, Changed: %t\n", flag.Value(), flag.Changed())
 func (f *Flag) Reset() {
 	f.value = f.defaultValue
-	if f.ptr != nil {
-		f.resetPointer()
-	}
+	f.kind.store(f.ptr, f.defaultValue)
 	f.source = sourceDefault
 }
 
-// resetPointer resets the pointer to the default value based on the flag type
-func (f *Flag) resetPointer() {
-	switch f.flagType {
-	case "string":
-		f.resetStringPointer()
-	case "int":
-		f.resetIntPointer()
-	case "bool":
-		f.resetBoolPointer()
-	case "float64":
-		f.resetFloat64Pointer()
-	case "duration":
-		f.resetDurationPointer()
-	case "stringSlice":
-		f.resetStringSlicePointer()
-	}
-}
-
-// resetStringPointer resets a string pointer to its default value
-func (f *Flag) resetStringPointer() {
-	if val, ok := f.defaultValue.(string); ok {
-		if ptr, ok := f.ptr.(*string); ok {
-			*ptr = val
-		}
-	}
-}
-
-// resetIntPointer resets an int pointer to its default value
-func (f *Flag) resetIntPointer() {
-	if val, ok := f.defaultValue.(int); ok {
-		if ptr, ok := f.ptr.(*int); ok {
-			*ptr = val
-		}
-	}
-}
-
-// resetBoolPointer resets a bool pointer to its default value
-func (f *Flag) resetBoolPointer() {
-	if val, ok := f.defaultValue.(bool); ok {
-		if ptr, ok := f.ptr.(*bool); ok {
-			*ptr = val
-		}
-	}
-}
-
-// resetFloat64Pointer resets a float64 pointer to its default value
-func (f *Flag) resetFloat64Pointer() {
-	if val, ok := f.defaultValue.(float64); ok {
-		if ptr, ok := f.ptr.(*float64); ok {
-			*ptr = val
-		}
-	}
-}
-
-// resetDurationPointer resets a Duration pointer to its default value
-func (f *Flag) resetDurationPointer() {
-	if val, ok := f.defaultValue.(time.Duration); ok {
-		if ptr, ok := f.ptr.(*time.Duration); ok {
-			*ptr = val
-		}
-	}
-}
-
-// resetStringSlicePointer resets a []string pointer to its default value
-func (f *Flag) resetStringSlicePointer() {
-	if val, ok := f.defaultValue.([]string); ok {
-		if ptr, ok := f.ptr.(*[]string); ok {
-			*ptr = val
-		}
-	}
+// set stores v as the flag's value and writes it through the declared pointer.
+func (f *Flag) set(v interface{}) {
+	f.value = v
+	f.kind.store(f.ptr, v)
 }

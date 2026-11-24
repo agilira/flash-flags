@@ -70,9 +70,9 @@ func (fs *FlagSet) ConfinePath(name, dir string) error {
 	if flag == nil {
 		return fmt.Errorf("flag not found: %s", name)
 	}
-	if flag.flagType != "string" && flag.flagType != "stringSlice" {
+	if flag.kind.name != "string" && flag.kind.name != "stringSlice" {
 		return fmt.Errorf("flag --%s is a %s flag; only string and stringSlice flags can be confined to a path",
-			name, flag.flagType)
+			name, flag.kind.name)
 	}
 	if dir == "" {
 		return fmt.Errorf("flag --%s: confinement directory must not be empty", name)
@@ -196,7 +196,7 @@ func (fs *FlagSet) OpenConfined(name string) (*os.File, error) {
 	}
 	value, ok := flag.value.(string)
 	if !ok {
-		return nil, fmt.Errorf("flag --%s is a %s flag; OpenConfined reads a single path", name, flag.flagType)
+		return nil, fmt.Errorf("flag --%s is a %s flag; OpenConfined reads a single path", name, flag.kind.name)
 	}
 	if value == "" {
 		return nil, fmt.Errorf("flag --%s has no value to open", name)

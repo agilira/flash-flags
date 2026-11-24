@@ -8,9 +8,7 @@ package flashflags
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
-	"time"
 )
 
 // Parse parses command line arguments with optimized allocations and validates all constraints.
@@ -189,13 +187,8 @@ func (fs *FlagSet) parseShortFlag(args []string, i int) (int, error) {
 		return 0, fmt.Errorf("unknown flag: -%s", shortKey)
 	}
 
-	if flag.flagType == "bool" {
-		flag.value = true
-		if flag.ptr != nil {
-			if ptr, ok := flag.ptr.(*bool); ok {
-				*ptr = true
-			}
-		}
+	if flag.kind == boolKind {
+		flag.set(true)
 		flag.source = sourceCLI
 		return 0, nil
 	}
@@ -242,7 +235,7 @@ func (fs *FlagSet) parseShortFlagWithEquals(arg string, eqPos int) (int, error) 
 	}
 
 	// For boolean flags, -f=true or -f=false
-	if flag.flagType == "bool" {
+	if flag.kind == boolKind {
 		err := fs.setFlagValue(flag.name, flagValue)
 		if err != nil {
 			return 0, err
@@ -274,14 +267,9 @@ func (fs *FlagSet) parseCombinedShortFlags(args []string, i int, flagChars strin
 		// All flags except the last must be boolean for combined syntax
 		isLastFlag := pos == len(flagChars)-1
 
-		if flag.flagType == "bool" {
+		if flag.kind == boolKind {
 			// Set boolean flag to true
-			flag.value = true
-			if flag.ptr != nil {
-				if ptr, ok := flag.ptr.(*bool); ok {
-					*ptr = true
-				}
-			}
+			flag.set(true)
 			flag.source = sourceCLI
 		} else {
 			// Non-boolean flag must be the last in the sequence
@@ -318,7 +306,7 @@ func (fs *FlagSet) parseLongFlag(args []string, i int) (int, error) {
 	} else {
 		flagName = arg
 		// Check if this is a boolean flag first
-		if flag, exists := fs.flags[flagName]; exists && flag.flagType == "bool" {
+		if flag, exists := fs.flags[flagName]; exists && flag.kind == boolKind {
 			// Boolean flag without explicit value = true
 			flagValue = "true"
 		} else {
@@ -347,111 +335,12 @@ func (fs *FlagSet) parseLongFlag(args []string, i int) (int, error) {
 	return 0, nil
 }
 
-// Type-specific value setters to reduce complexity
-
-func (fs *FlagSet) setStringValue(flag *Flag, value string) error {
-	flag.value = value
-	if flag.ptr != nil {
-		if ptr, ok := flag.ptr.(*string); ok {
-			*ptr = value
-		}
-	}
-	return nil
-}
-
-func (fs *FlagSet) setIntValue(flag *Flag, value, name string) error {
-	intVal, err := strconv.Atoi(value)
-	if err != nil {
-		return fmt.Errorf("invalid int value for flag --%s: %s", name, value)
-	}
-	flag.value = intVal
-	if flag.ptr != nil {
-		if ptr, ok := flag.ptr.(*int); ok {
-			*ptr = intVal
-		}
-	}
-	return nil
-}
-
-func (fs *FlagSet) setBoolValue(flag *Flag, value, name string) error {
-	boolVal, err := strconv.ParseBool(value)
-	if err != nil {
-		return fmt.Errorf("invalid bool value for flag --%s: %s", name, value)
-	}
-	flag.value = boolVal
-	if flag.ptr != nil {
-		if ptr, ok := flag.ptr.(*bool); ok {
-			*ptr = boolVal
-		}
-	}
-	return nil
-}
-
-func (fs *FlagSet) setDurationValue(flag *Flag, value, name string) error {
-	durVal, err := time.ParseDuration(value)
-	if err != nil {
-		return fmt.Errorf("invalid duration value for flag --%s: %s", name, value)
-	}
-	flag.value = durVal
-	if flag.ptr != nil {
-		if ptr, ok := flag.ptr.(*time.Duration); ok {
-			*ptr = durVal
-		}
-	}
-	return nil
-}
-
-func (fs *FlagSet) setFloat64Value(flag *Flag, value, name string) error {
-	floatVal, err := strconv.ParseFloat(value, 64)
-	if err != nil {
-		return fmt.Errorf("invalid float64 value for flag --%s: %s", name, value)
-	}
-	flag.value = floatVal
-	if flag.ptr != nil {
-		if ptr, ok := flag.ptr.(*float64); ok {
-			*ptr = floatVal
-		}
-	}
-	return nil
-}
-
-func (fs *FlagSet) setStringSliceValue(flag *Flag, value string) error {
-	slice := fs.parseStringSlice(value)
-	// WHY: a slice flag repeated on the command line accumulates
-	// (--tag a --tag b means [a b]), as the NOTE on splitByComma promises.
-	// Only a repetition within the command line appends: a value from the
-	// command line still replaces one from the default, env or config.
-	if fs.repeated[flag.name] {
-		if current, ok := flag.value.([]string); ok {
-			slice = append(append([]string(nil), current...), slice...)
-		}
-	}
-
-	// WHY no per-element screening here: the caller screened the whole value
-	// before it was split, and input hygiene is a per-character property, so no
-	// element can fail a check the joined string already passed. The config
-	// file path does need it, because a JSON array never passes through this
-	// function -- see screenConfigValue.
-
-	// Additional validation for slice size (DoS protection)
-	if len(slice) > 10000 {
-		return fmt.Errorf("string slice too large: %d items (max: 10000)", len(slice))
-	}
-
-	flag.value = slice
-	fs.updateStringSlicePointer(flag, slice)
-	if fs.repeated != nil {
-		fs.repeated[flag.name] = true
-	}
-	return nil
-}
-
-// parseStringSlice parses a comma-separated string into a slice
-func (fs *FlagSet) parseStringSlice(value string) []string {
+// splitStringSlice parses a comma-separated string into a slice
+func splitStringSlice(value string) []string {
 	if value == "" {
 		return []string{}
 	}
-	return fs.splitByComma(value)
+	return splitByComma(value)
 }
 
 // splitByComma splits a string by commas with optimized allocation.
@@ -459,8 +348,8 @@ func (fs *FlagSet) parseStringSlice(value string) []string {
 // literal commas must be passed as separate --flag invocations or quoted at the
 // shell level.  Escape support is deferred to a future minor release to avoid
 // a breaking change in the split semantics.
-func (fs *FlagSet) splitByComma(value string) []string {
-	commas := fs.countCommas(value)
+func splitByComma(value string) []string {
+	commas := countCommas(value)
 	slice := make([]string, 0, commas+1)
 
 	start := 0
@@ -479,7 +368,7 @@ func (fs *FlagSet) splitByComma(value string) []string {
 }
 
 // countCommas counts the number of commas in a string
-func (fs *FlagSet) countCommas(value string) int {
+func countCommas(value string) int {
 	commas := 0
 	for _, c := range []byte(value) {
 		if c == ',' {
@@ -487,15 +376,6 @@ func (fs *FlagSet) countCommas(value string) int {
 		}
 	}
 	return commas
-}
-
-// updateStringSlicePointer updates the pointer if it exists
-func (fs *FlagSet) updateStringSlicePointer(flag *Flag, slice []string) {
-	if flag.ptr != nil {
-		if ptr, ok := flag.ptr.(*[]string); ok {
-			*ptr = slice
-		}
-	}
 }
 
 // validateInputHygiene rejects flag values that are malformed as strings,
@@ -596,7 +476,7 @@ func (fs *FlagSet) setFlagValueFrom(name, value string, src flagSource) error {
 		}
 	}
 
-	if err := fs.setFlagValueByType(flag, value, name); err != nil {
+	if err := fs.setFlagValueByType(flag, value); err != nil {
 		return err
 	}
 
@@ -604,24 +484,20 @@ func (fs *FlagSet) setFlagValueFrom(name, value string, src flagSource) error {
 	return fs.validateFlag(flag, name)
 }
 
-// setFlagValueByType sets the flag value based on its type
-func (fs *FlagSet) setFlagValueByType(flag *Flag, value, name string) error {
-	switch flag.flagType {
-	case "string":
-		return fs.setStringValue(flag, value)
-	case "int":
-		return fs.setIntValue(flag, value, name)
-	case "bool":
-		return fs.setBoolValue(flag, value, name)
-	case "duration":
-		return fs.setDurationValue(flag, value, name)
-	case "float64":
-		return fs.setFloat64Value(flag, value, name)
-	case "stringSlice":
-		return fs.setStringSliceValue(flag, value)
-	default:
-		return fmt.Errorf("unsupported flag type: %s", flag.flagType)
+// setFlagValueByType parses value with the flag's kind and stores it. For an
+// accumulating kind it also records that the flag was given in this Parse, so
+// the next occurrence appends.
+func (fs *FlagSet) setFlagValueByType(flag *Flag, value string) error {
+	again := flag.kind.accumulates && fs.repeated[flag.name]
+	v, err := flag.kind.parse(flag, value, again)
+	if err != nil {
+		return err
 	}
+	flag.set(v)
+	if flag.kind.accumulates && fs.repeated != nil {
+		fs.repeated[flag.name] = true
+	}
+	return nil
 }
 
 // validateFlag runs validation on the flag if a validator is set

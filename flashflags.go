@@ -102,6 +102,27 @@ func New(name string) *FlagSet {
 	}
 }
 
+// define registers a flag. value is its starting value, defaultValue what
+// Reset restores, and ptr the pointer handed back to the caller. They differ
+// only for a slice, whose starting value is a copy of the caller's default.
+// An empty shortKey registers the long form only.
+func (fs *FlagSet) define(name, shortKey, usage string, kind *flagKind, value, defaultValue, ptr interface{}) {
+	flag := &Flag{
+		name:         name,
+		value:        value,
+		defaultValue: defaultValue,
+		ptr:          ptr,
+		kind:         kind,
+		source:       sourceDefault,
+		usage:        usage,
+		shortKey:     shortKey,
+	}
+	fs.flags[name] = flag
+	if shortKey != "" {
+		fs.shortMap[shortKey] = flag
+	}
+}
+
 // String defines a string flag with the specified name, default value, and usage string.
 // The return value is a pointer to a string variable that stores the value of the flag.
 //
@@ -119,17 +140,7 @@ func New(name string) *FlagSet {
 // The pointer value is updated immediately when the flag is parsed.
 func (fs *FlagSet) String(name, defaultValue, usage string) *string {
 	value := defaultValue
-	flag := &Flag{
-		name:         name,
-		value:        defaultValue,
-		ptr:          &value,
-		flagType:     "string",
-		source:       sourceDefault,
-		usage:        usage,
-		shortKey:     "",
-		defaultValue: defaultValue,
-	}
-	fs.flags[name] = flag
+	fs.define(name, "", usage, stringKind, defaultValue, defaultValue, &value)
 	return &value
 }
 
@@ -154,20 +165,7 @@ func (fs *FlagSet) String(name, defaultValue, usage string) *string {
 // If shortKey is empty string, only the long form (--name) is available.
 func (fs *FlagSet) StringVar(name, shortKey string, defaultValue, usage string) *string {
 	value := defaultValue
-	flag := &Flag{
-		name:         name,
-		value:        defaultValue,
-		ptr:          &value,
-		flagType:     "string",
-		source:       sourceDefault,
-		usage:        usage,
-		shortKey:     shortKey,
-		defaultValue: defaultValue,
-	}
-	fs.flags[name] = flag
-	if shortKey != "" {
-		fs.shortMap[shortKey] = flag
-	}
+	fs.define(name, shortKey, usage, stringKind, defaultValue, defaultValue, &value)
 	return &value
 }
 
@@ -175,17 +173,7 @@ func (fs *FlagSet) StringVar(name, shortKey string, defaultValue, usage string) 
 // The return value is a pointer to an int variable that stores the value of the flag.
 func (fs *FlagSet) Int(name string, defaultValue int, usage string) *int {
 	value := defaultValue
-	flag := &Flag{
-		name:         name,
-		value:        defaultValue,
-		ptr:          &value,
-		flagType:     "int",
-		source:       sourceDefault,
-		usage:        usage,
-		shortKey:     "",
-		defaultValue: defaultValue,
-	}
-	fs.flags[name] = flag
+	fs.define(name, "", usage, intKind, defaultValue, defaultValue, &value)
 	return &value
 }
 
@@ -194,21 +182,7 @@ func (fs *FlagSet) Int(name string, defaultValue int, usage string) *int {
 // The return value is a pointer to an int variable that stores the value of the flag.
 func (fs *FlagSet) IntVar(name, shortKey string, defaultValue int, usage string) *int {
 	value := defaultValue
-	flag := &Flag{
-		name:         name,
-		value:        defaultValue,
-		ptr:          &value,
-		flagType:     "int",
-		source:       sourceDefault,
-		usage:        usage,
-		shortKey:     shortKey,
-		validator:    nil,
-		defaultValue: defaultValue,
-	}
-	fs.flags[name] = flag
-	if shortKey != "" {
-		fs.shortMap[shortKey] = flag
-	}
+	fs.define(name, shortKey, usage, intKind, defaultValue, defaultValue, &value)
 	return &value
 }
 
@@ -235,18 +209,7 @@ func (fs *FlagSet) IntVar(name, shortKey string, defaultValue int, usage string)
 //	fmt.Printf("Verbose: %t, Debug: %t\n", *verbose, *debug) // Output: Verbose: true, Debug: false
 func (fs *FlagSet) Bool(name string, defaultValue bool, usage string) *bool {
 	value := defaultValue
-	flag := &Flag{
-		name:         name,
-		value:        defaultValue,
-		ptr:          &value,
-		flagType:     "bool",
-		source:       sourceDefault,
-		usage:        usage,
-		shortKey:     "",
-		validator:    nil,
-		defaultValue: defaultValue,
-	}
-	fs.flags[name] = flag
+	fs.define(name, "", usage, boolKind, defaultValue, defaultValue, &value)
 	return &value
 }
 
@@ -256,21 +219,7 @@ func (fs *FlagSet) Bool(name string, defaultValue bool, usage string) *bool {
 // The return value is a pointer to a bool variable that stores the value of the flag.
 func (fs *FlagSet) BoolVar(name, shortKey string, defaultValue bool, usage string) *bool {
 	value := defaultValue
-	flag := &Flag{
-		name:         name,
-		value:        defaultValue,
-		ptr:          &value,
-		flagType:     "bool",
-		source:       sourceDefault,
-		usage:        usage,
-		shortKey:     shortKey,
-		validator:    nil,
-		defaultValue: defaultValue,
-	}
-	fs.flags[name] = flag
-	if shortKey != "" {
-		fs.shortMap[shortKey] = flag
-	}
+	fs.define(name, shortKey, usage, boolKind, defaultValue, defaultValue, &value)
 	return &value
 }
 
@@ -305,21 +254,7 @@ func (fs *FlagSet) Duration(name string, defaultValue time.Duration, usage strin
 // -shortKey value. An empty shortKey registers the long form only.
 func (fs *FlagSet) DurationVar(name, shortKey string, defaultValue time.Duration, usage string) *time.Duration {
 	value := defaultValue
-	flag := &Flag{
-		name:         name,
-		value:        defaultValue,
-		ptr:          &value,
-		flagType:     "duration",
-		source:       sourceDefault,
-		usage:        usage,
-		shortKey:     shortKey,
-		validator:    nil,
-		defaultValue: defaultValue,
-	}
-	fs.flags[name] = flag
-	if shortKey != "" {
-		fs.shortMap[shortKey] = flag
-	}
+	fs.define(name, shortKey, usage, durationKind, defaultValue, defaultValue, &value)
 	return &value
 }
 
@@ -334,21 +269,7 @@ func (fs *FlagSet) Float64(name string, defaultValue float64, usage string) *flo
 // -shortKey value. An empty shortKey registers the long form only.
 func (fs *FlagSet) Float64Var(name, shortKey string, defaultValue float64, usage string) *float64 {
 	value := defaultValue
-	flag := &Flag{
-		name:         name,
-		value:        defaultValue,
-		ptr:          &value,
-		flagType:     "float64",
-		source:       sourceDefault,
-		usage:        usage,
-		shortKey:     shortKey,
-		validator:    nil,
-		defaultValue: defaultValue,
-	}
-	fs.flags[name] = flag
-	if shortKey != "" {
-		fs.shortMap[shortKey] = flag
-	}
+	fs.define(name, shortKey, usage, float64Kind, defaultValue, defaultValue, &value)
 	return &value
 }
 
@@ -388,21 +309,7 @@ func (fs *FlagSet) StringSlice(name string, defaultValue []string, usage string)
 func (fs *FlagSet) StringSliceVar(name, shortKey string, defaultValue []string, usage string) *[]string {
 	value := make([]string, len(defaultValue))
 	copy(value, defaultValue)
-	flag := &Flag{
-		name:         name,
-		value:        value,
-		ptr:          &value,
-		flagType:     "stringSlice",
-		source:       sourceDefault,
-		usage:        usage,
-		shortKey:     shortKey,
-		validator:    nil,
-		defaultValue: defaultValue,
-	}
-	fs.flags[name] = flag
-	if shortKey != "" {
-		fs.shortMap[shortKey] = flag
-	}
+	fs.define(name, shortKey, usage, stringSliceKind, value, defaultValue, &value)
 	return &value
 }
 

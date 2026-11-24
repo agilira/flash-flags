@@ -14,7 +14,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"time"
 )
 
 // SetConfigFile sets an explicit configuration file path.
@@ -282,120 +281,6 @@ func (fs *FlagSet) applyConfig(config map[string]interface{}) error {
 	return nil
 }
 
-// Config-specific value setters to reduce complexity
-
-func (fs *FlagSet) setStringValueFromConfig(flag *Flag, value interface{}, name string) error {
-	if str, ok := value.(string); ok {
-		flag.value = str
-		if flag.ptr != nil {
-			if ptr, ok := flag.ptr.(*string); ok {
-				*ptr = str
-			}
-		}
-		return nil
-	}
-	return fmt.Errorf("expected string for flag %s, got %T", name, value)
-}
-
-func (fs *FlagSet) setIntValueFromConfig(flag *Flag, value interface{}, name string) error {
-	var intVal int
-	switch v := value.(type) {
-	case float64: // JSON numbers are float64
-		intVal = int(v)
-	case int:
-		intVal = v
-	default:
-		return fmt.Errorf("expected number for flag %s, got %T", name, value)
-	}
-	flag.value = intVal
-	if flag.ptr != nil {
-		if ptr, ok := flag.ptr.(*int); ok {
-			*ptr = intVal
-		}
-	}
-	return nil
-}
-
-func (fs *FlagSet) setBoolValueFromConfig(flag *Flag, value interface{}, name string) error {
-	if boolVal, ok := value.(bool); ok {
-		flag.value = boolVal
-		if flag.ptr != nil {
-			if ptr, ok := flag.ptr.(*bool); ok {
-				*ptr = boolVal
-			}
-		}
-		return nil
-	}
-	return fmt.Errorf("expected boolean for flag %s, got %T", name, value)
-}
-
-func (fs *FlagSet) setFloat64ValueFromConfig(flag *Flag, value interface{}, name string) error {
-	var floatVal float64
-	switch v := value.(type) {
-	case float64:
-		floatVal = v
-	case int:
-		floatVal = float64(v)
-	default:
-		return fmt.Errorf("expected number for flag %s, got %T", name, value)
-	}
-	flag.value = floatVal
-	if flag.ptr != nil {
-		if ptr, ok := flag.ptr.(*float64); ok {
-			*ptr = floatVal
-		}
-	}
-	return nil
-}
-
-// setDurationValueFromConfig sets a duration flag from a config file value.
-// JSON has no duration type, so two encodings are accepted: the human-readable
-// string understood by time.ParseDuration ("30s", "1m30s"), and a plain number
-// of nanoseconds, which is what encoding/json emits for a time.Duration.
-func (fs *FlagSet) setDurationValueFromConfig(flag *Flag, value interface{}, name string) error {
-	var duration time.Duration
-	switch v := value.(type) {
-	case string:
-		parsed, err := time.ParseDuration(v)
-		if err != nil {
-			return fmt.Errorf("invalid duration for flag %s: %v", name, err)
-		}
-		duration = parsed
-	case float64: // JSON numbers decode to float64; treated as nanoseconds
-		duration = time.Duration(v)
-	default:
-		return fmt.Errorf("expected duration string or number for flag %s, got %T", name, value)
-	}
-	flag.value = duration
-	if flag.ptr != nil {
-		if ptr, ok := flag.ptr.(*time.Duration); ok {
-			*ptr = duration
-		}
-	}
-	return nil
-}
-
-func (fs *FlagSet) setStringSliceValueFromConfig(flag *Flag, value interface{}, name string) error {
-	if slice, ok := value.([]interface{}); ok {
-		strSlice := make([]string, len(slice))
-		for i, item := range slice {
-			if str, ok := item.(string); ok {
-				strSlice[i] = str
-			} else {
-				return fmt.Errorf("expected string array for flag %s, got %T in array", name, item)
-			}
-		}
-		flag.value = strSlice
-		if flag.ptr != nil {
-			if ptr, ok := flag.ptr.(*[]string); ok {
-				*ptr = strSlice
-			}
-		}
-		return nil
-	}
-	return fmt.Errorf("expected array for flag %s, got %T", name, value)
-}
-
 func (fs *FlagSet) setFlagValueFromConfig(name string, value interface{}) error {
 	flag, exists := fs.flags[name]
 	if !exists {
@@ -411,7 +296,7 @@ func (fs *FlagSet) setFlagValueFromConfig(name string, value interface{}) error 
 	}
 
 	// Set value based on type using dedicated functions
-	if err := fs.setConfigValueByType(flag, value, name); err != nil {
+	if err := fs.setConfigValueByType(flag, value); err != nil {
 		return err
 	}
 
@@ -452,24 +337,15 @@ func (fs *FlagSet) screenConfigValue(name string, value interface{}) error {
 	return nil
 }
 
-// setConfigValueByType sets the flag value from config based on its type
-func (fs *FlagSet) setConfigValueByType(flag *Flag, value interface{}, name string) error {
-	switch flag.flagType {
-	case "string":
-		return fs.setStringValueFromConfig(flag, value, name)
-	case "int":
-		return fs.setIntValueFromConfig(flag, value, name)
-	case "bool":
-		return fs.setBoolValueFromConfig(flag, value, name)
-	case "float64":
-		return fs.setFloat64ValueFromConfig(flag, value, name)
-	case "duration":
-		return fs.setDurationValueFromConfig(flag, value, name)
-	case "stringSlice":
-		return fs.setStringSliceValueFromConfig(flag, value, name)
-	default:
-		return fmt.Errorf("unsupported flag type: %s", flag.flagType)
+// setConfigValueByType converts a config file value with the flag's kind and
+// stores it.
+func (fs *FlagSet) setConfigValueByType(flag *Flag, value interface{}) error {
+	v, err := flag.kind.fromConfig(flag, value)
+	if err != nil {
+		return err
 	}
+	flag.set(v)
+	return nil
 }
 
 // validateFlagValue validates a flag value using its validator function

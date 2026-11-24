@@ -7,7 +7,7 @@
 // - Parse: Complete argument parsing pipeline with all flag types
 // - parseArguments: Core argument processing logic
 // - setFlagValue: Value setting and type conversion
-// - parseStringSlice: CSV parsing for string slices
+// - splitStringSlice: CSV parsing for string slices
 // - LoadConfig: JSON configuration file loading
 // - LoadEnvironmentVariables: Environment variable processing
 //
@@ -179,7 +179,7 @@ func FuzzParse(f *testing.F) {
 	})
 }
 
-// FuzzParseStringSlice tests the parseStringSlice function for CSV parsing vulnerabilities.
+// FuzzParseStringSlice tests the splitStringSlice function for CSV parsing vulnerabilities.
 //
 // This function handles comma-separated values and could be vulnerable to DoS attacks.
 func FuzzParseStringSlice(f *testing.F) {

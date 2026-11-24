@@ -42,7 +42,7 @@ func (fs *FlagSet) PrintUsage() {
 			fmt.Printf(", -%s", flag.shortKey)
 		}
 		fmt.Printf("\n")
-		fmt.Printf("        %s (type: %s)\n", flag.usage, flag.flagType)
+		fmt.Printf("        %s (type: %s)\n", flag.usage, flag.kind.name)
 	}
 }
 
@@ -231,9 +231,9 @@ func (fs *FlagSet) buildFlagName(line *strings.Builder, flag *Flag) {
 
 // addTypeInfo adds type information for non-bool flags
 func (fs *FlagSet) addTypeInfo(line *strings.Builder, flag *Flag) {
-	if flag.flagType != "bool" {
+	if flag.kind.name != "bool" {
 		line.WriteString(" ")
-		line.WriteString(strings.ToUpper(flag.flagType))
+		line.WriteString(strings.ToUpper(flag.kind.name))
 	}
 }
 
@@ -250,7 +250,7 @@ func (fs *FlagSet) addDescriptionAndModifiers(line *strings.Builder, flag *Flag)
 	line.WriteString(flag.usage)
 
 	// Add default value
-	if flag.defaultValue != nil && flag.flagType != "bool" {
+	if flag.defaultValue != nil && flag.kind.name != "bool" {
 		line.WriteString(" (default: ")
 		line.WriteString(fmt.Sprintf("%v", flag.defaultValue))
 		line.WriteString(")")
