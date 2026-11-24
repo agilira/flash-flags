@@ -37,6 +37,7 @@ type Flag struct {
 	group        string                  // Group name for help organization
 	envVar       string                  // Environment variable name for this flag
 	confineTo    string                  // Directory this path-valued flag is confined to, if any
+	givenIn      uint64                  // FlagSet.parseGen of the command line that last set it
 }
 
 // Name returns the flag name.
